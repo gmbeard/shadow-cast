@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+topdir=$(cd $(dirname $0)/..; pwd)
+versiondir="${topdir}/.versioning"
+semverutilbin="semverutil"
+
+nextversionupdate=$(find "${versiondir}/changes" -type f -name '*.patch.*' \
+    | (grep . >/dev/null && echo "PATCH"))
+nextversionupdate=$(find "${versiondir}/changes" -type f -name '*.minor.*' \
+    | (grep . >/dev/null && echo "MINOR" || echo "${nextversionupdate}"))
+nextversionupdate=$(find "${versiondir}/changes" -type f -name '*.major.*' \
+    | (grep . >/dev/null && echo "MAJOR" || echo "${nextversionupdate}"))
+
+case ${nextversionupdate} in
+    PATCH)
+        versionbumpparam="-P"
+        ;;
+    MINOR)
+        versionbumpparam="-N"
+        ;;
+    MAJOR)
+        versionbumpparam="-M"
+        ;;
+esac
+
+if [ -z $versionbumpparam ]; then
+    echo 'No changes' >&2
+    exit 1
+fi
+
+versionbufferfile=$(mktemp "/tmp/$(basename $0)-${$}.XXXXXX")
+changesbufferfile=$(mktemp "/tmp/$(basename $0)-changes-${$}.XXXXXX")
+trap 'rm -rf ${versionbufferfile} ${changesbufferfile}' INT TERM EXIT
+
+<"${versiondir}/current" ${semverutilbin} "${versionbumpparam}" >"${versionbufferfile}" || {
+    echo "Couldn't change ${nextversionupdate} version" >&2
+    exit 1
+}
+
+if [ -x "${versiondir}/version-update" ]; then
+    while read change; do
+        [ -n "{change}" ] \
+            && printf "MAJOR %s\n" "$(echo "${change}" | sed 's;^- ;;')" \
+            >>"${changesbufferfile}"
+    done < <(cat "${versiondir}/changes/"*.major.* 2>/dev/null) || true
+
+    while read change; do
+        [ -n "{change}" ] \
+            && printf "MINOR %s\n" "$(echo "${change}" | sed 's;^- ;;')" \
+            >>"${changesbufferfile}"
+    done < <(cat "${versiondir}/changes/"*.minor.* 2>/dev/null) || true
+
+    while read change; do
+        [ -n "{change}" ] \
+            && printf "PATCH %s\n" "$(echo "${change}" | sed 's;^- ;;')" \
+            >>"${changesbufferfile}"
+    done < <(cat "${versiondir}/changes/"*.patch.* 2>/dev/null) || true
+
+    export NEXT_VERSION=$(cat "${versionbufferfile}")
+    export CHANGES_FILE="${changesbufferfile}"
+    if ! (cd "${topdir}"; "${versiondir}/version-update"); then
+        echo "Couldn't change version: version-update returned $?" >&2
+        exit 1
+    fi
+fi
+
+cp "${versionbufferfile}" "${versiondir}/current"
+rm -rf "${versiondir}/changes/"*

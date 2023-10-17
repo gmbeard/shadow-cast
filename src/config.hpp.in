@@ -1,0 +1,17 @@
+#ifndef SHADOW_CAST_CONFIG_HPP_INCLUDED
+#define SHADOW_CAST_CONFIG_HPP_INCLUDED
+
+namespace sc
+{
+enum struct ByteOrder
+{
+    little_endian,
+    big_endian
+};
+
+// clang-format off
+auto constexpr kByteOrder = ByteOrder::@SHADOW_CAST_BYTE_ORDER@;
+// clang-format on
+} // namespace sc
+
+#endif // SHADOW_CAST_CONFIG_HPP_INCLUDED

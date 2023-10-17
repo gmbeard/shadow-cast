@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+
+changesfile=$(mktemp "/tmp/$(basename $0)-${$}.XXXXXX")
+trap "rm -rf ${changesfile}" INT TERM EXIT
+
+(
+echo "## $NEXT_VERSION"
+for changetype in MAJOR MINOR PATCH; do
+    if egrep '^'${changetype}' ' $CHANGES_FILE >/dev/null; then
+        echo "### ${changetype} Changes:"
+        egrep '^'${changetype}' ' $CHANGES_FILE | while read _patch line; do
+            echo "- ${line}"
+        done
+        echo
+    fi
+done
+) >${changesfile}
+
+if [ -f "./CHANGELOG.md" ]; then
+    cat "./CHANGELOG.md" >>${changesfile}
+fi
+
+cp "${changesfile}" "./CHANGELOG.md"

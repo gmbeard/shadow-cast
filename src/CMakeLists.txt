@@ -1,16 +1,43 @@
+configure_file(
+    config.hpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/config.hpp
+)
+
 add_library(shadow-cast-obj
     OBJECT
-    audio_service.cpp
-    codec.cpp
-    context.cpp
-    elapsed.cpp
-    format.cpp
-    frame.cpp
-    media_chunk.cpp
-    readiness.cpp
-    result.cpp
-    service.cpp
-    service_registry.cpp
+    av/buffer.cpp
+    av/buffer_pool.cpp
+    av/codec.cpp
+    av/format.cpp
+    av/frame.cpp
+    av/media_chunk.cpp
+    av/sample_format.cpp
+
+	handlers/stream_finalizer.cpp
+    handlers/audio_chunk_writer.cpp
+    handlers/video_frame_writer.cpp
+
+    services/audio_service.cpp
+    services/readiness.cpp
+    services/service.cpp
+    services/service_registry.cpp
+    services/video_service.cpp
+    services/context.cpp
+
+    utils/elapsed.cpp
+    utils/result.cpp
+    utils/base64.cpp
+	utils/cmd_line.cpp
+
+    error.cpp
+    logging.cpp
+    nvidia.cpp
+)
+
+target_include_directories(shadow-cast-obj
+    PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(shadow-cast-obj

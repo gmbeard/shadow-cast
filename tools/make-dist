@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -e
+
+topdir=$(cd $(dirname $0)/..; pwd)
+version=$(cat ${topdir}/.versioning/current)
+projectname=shadow-cast
+
+cd ${topdir}
+
+[[ -d ./dist ]] && rm -rf ./dist
+mkdir ./dist
+
+tar \
+    --exclude './build' \
+    --exclude './dist' \
+    --exclude './.private' \
+    --exclude './.git' \
+    --exclude './.github' \
+    --exclude './.cache' \
+    --transform 's;^\.;'${projectname}'-'${version}';' \
+    -cJf ./dist/${projectname}-source-${version}.tar.xz \
+    .
+
+cd ./dist
+sha256sum ${projectname}-source-${version}.tar.xz >${projectname}-source-${version}.sha256

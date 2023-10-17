@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+topdir="$(cd $(dirname $0)/..; pwd)"
+changesdir="${topdir}/.versioning/changes"
+randomstring=$(LC_ALL=C </dev/urandom tr -c -d 'a-zA-Z0-9' | head -c 10)
+editor=${EDITOR:=vim}
+
+while [ ${#} -ne 0 ]; do
+    arg=${1}
+    case "${arg}" in
+        -M)
+            [ -z ${versiontype} ] || { echo "Multiple version arguments: ${arg}" >&2; exit 1; }
+            versiontype="major"
+            ;;
+        -N)
+            [ -z ${versiontype} ] || { echo "Multiple version arguments: ${arg}" >&2; exit 1; }
+            versiontype="minor"
+            ;;
+        -P)
+            [ -z ${versiontype} ] || { echo "Multiple version arguments: ${arg}" >&2; exit 1; }
+            versiontype="patch"
+            ;;
+        *)
+            echo "Unknown argument: ${arg}" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+if [ -z ${versiontype} ]; then
+    echo "No version type specified" >&2
+    exit 1
+fi
+
+tmpchangesfile=$(mktemp "/tmp/$(basename ${0})-${$}.XXXXXX")
+trap "rm -rf ${tmpchangesfile}" INT TERM EXIT
+
+cat >>${tmpchangesfile} <<-EOF
+# Enter your change message.
+# Each change message should go on a separate line.
+# Lines beginning with '#' are comments and will be removed.
+# Markdown is supported.
+# An empty file will discard the change.
+
+EOF
+
+${editor} ${tmpchangesfile}
+
+if [ ${?} -ne 0 ]; then
+    echo "Received non-zero exit code. Aborting change"
+    exit 1
+fi
+
+sed -i -e '/^#/d' -e '/^$/d' ${tmpchangesfile}
+
+linecount=$(wc -l "${tmpchangesfile}" | awk '{ print $1; }')
+
+if [[ "${linecount}" == "0" ]]; then
+    echo "Empty change. Discarding" >&2
+    exit 1
+fi
+
+[ -d "${changesdir}" ] || mkdir -p "${changesdir}"
+
+outputfile="${changesdir}/${randomstring}.${versiontype}.md"
+cp "${tmpchangesfile}" "${outputfile}"
+echo "Version change saved to: ${outputfile}"

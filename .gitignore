@@ -2,3 +2,4 @@ build/
 .cache/
 .private/
 experimental/
+dist/

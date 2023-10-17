@@ -1,0 +1,5 @@
+- Initial release
+- GPU accelerated framebuffer capture
+- nVidia GPUs only (1440p, 60fps, h264)
+- Pipewire audio only (stereo, 48Khz, aac)
+- Continuous capture to a specified file
