@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 include(CPPCheck)
+include(GNUInstallDirs)
 
 string(TOLOWER ${CMAKE_CXX_BYTE_ORDER} SHADOW_CAST_BYTE_ORDER)
 
@@ -58,3 +59,8 @@ if(SHADOW_CAST_ENABLE_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+install(
+    TARGETS shadow-cast
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
