@@ -91,10 +91,8 @@ auto create_video_encoder(std::string const& encoder_name,
     if (auto const ret = avcodec_open2(
             video_encoder_context.get(), video_encoder.get(), &options);
         ret < 0) {
-        throw CodecError
-        {
-            "Failed to open video codec: " + av_error_to_string(ret)
-        };
+        throw CodecError { "Failed to open video codec: " +
+                           av_error_to_string(ret) };
     }
 
     return video_encoder_context;

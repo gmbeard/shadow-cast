@@ -5,8 +5,8 @@ namespace sc
 {
 auto DynamicBuffer::prepare(std::size_t n) -> std::span<std::uint8_t>
 {
-    if (n > size())
-        data_.resize(n - size());
+    if (n > capacity())
+        data_.resize(data_.size() + (n - capacity()));
 
     return std::span { next(begin(data_), bytes_committed_), end(data_) };
 }
@@ -38,6 +38,11 @@ auto DynamicBuffer::data() const noexcept -> std::span<std::uint8_t const>
 auto DynamicBuffer::size() const noexcept -> std::size_t
 {
     return bytes_committed_;
+}
+
+auto DynamicBuffer::capacity() const noexcept -> std::size_t
+{
+    return data_.size() - size();
 }
 
 auto MediaChunk::channel_buffers() noexcept -> std::vector<DynamicBuffer>&

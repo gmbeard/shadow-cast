@@ -10,6 +10,7 @@ namespace sc
 struct Elapsed
 {
     auto value() const noexcept -> std::uint64_t;
+    auto nanosecond_value() const noexcept -> std::uint64_t;
 
 private:
     std::chrono::time_point<std::chrono::steady_clock> start_ =

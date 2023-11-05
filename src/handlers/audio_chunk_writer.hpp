@@ -13,19 +13,21 @@ struct ChunkWriter
                          AVCodecContext* codec_context,
                          AVStream* stream) noexcept;
 
-    auto operator()(sc::MediaChunk chunk) -> void;
+    auto operator()(MediaChunk chunk) -> void;
 
 private:
-    sc::BorrowedPtr<AVFormatContext> format_context_;
-    sc::BorrowedPtr<AVCodecContext> codec_context_;
-    sc::BorrowedPtr<AVStream> stream_;
-    sc::FramePtr frame_;
+    BorrowedPtr<AVFormatContext> format_context_;
+    BorrowedPtr<AVCodecContext> codec_context_;
+    BorrowedPtr<AVStream> stream_;
+    FramePtr frame_;
+    std::size_t total_samples_written_ { 0 };
+    MediaChunk buffer_;
 };
 
 auto send_frame(AVFrame* frame,
                 AVCodecContext* ctx,
                 AVFormatContext* fmt,
-                int stream_index) -> void;
+                AVStream* stream) -> void;
 
 } // namespace sc
 

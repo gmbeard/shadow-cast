@@ -11,7 +11,9 @@ struct StreamFinalizer
 {
     StreamFinalizer(BorrowedPtr<AVFormatContext> format_context,
                     BorrowedPtr<AVCodecContext> audio_codec_context,
-                    BorrowedPtr<AVCodecContext> video_codec_context);
+                    BorrowedPtr<AVCodecContext> video_codec_context,
+                    BorrowedPtr<AVStream> audio_stream,
+                    BorrowedPtr<AVStream> video_stream);
 
     auto operator()() const -> void;
 
@@ -19,6 +21,8 @@ private:
     BorrowedPtr<AVFormatContext> format_context_;
     BorrowedPtr<AVCodecContext> audio_codec_context_;
     BorrowedPtr<AVCodecContext> video_codec_context_;
+    BorrowedPtr<AVStream> audio_stream_;
+    BorrowedPtr<AVStream> video_stream_;
 };
 
 } // namespace sc

@@ -104,7 +104,10 @@ auto run(int argc, char** argv) -> void
     audio_encoder_context->sample_rate = 48'000;
     audio_encoder_context->sample_fmt =
         sc::convert_to_libav_format(supported_formats.front());
-    audio_encoder_context->bit_rate = 196'000;
+    audio_encoder_context->bit_rate = 128'000;
+    audio_encoder_context->time_base.num = 1;
+    audio_encoder_context->time_base.den = 48'000;
+    audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
     if (auto const ret =
             avcodec_open2(audio_encoder_context.get(), encoder.get(), nullptr);
@@ -118,6 +121,8 @@ auto run(int argc, char** argv) -> void
 
     if (!stream)
         throw sc::CodecError { "Failed to allocate audio stream" };
+
+    stream->index = 0;
 
     if (auto const ret = avcodec_parameters_from_context(
             stream->codecpar, audio_encoder_context.get());
@@ -141,9 +146,7 @@ auto run(int argc, char** argv) -> void
     if (!video_stream)
         throw sc::CodecError { "Failed to allocate video stream" };
 
-    video_stream->id = 1;
-    video_stream->time_base = audio_encoder_context->time_base;
-    video_stream->avg_frame_rate = audio_encoder_context->framerate;
+    video_stream->index = 1;
 
     if (auto const ret = avcodec_parameters_from_context(
             video_stream->codecpar, video_encoder_context.get());
@@ -188,15 +191,17 @@ auto run(int argc, char** argv) -> void
                             sc::ChunkWriter { format_context.get(),
                                               audio_encoder_context.get(),
                                               stream.get() });
-    set_video_frame_handler(
-        ctx,
-        sc::VideoFrameWriter { format_context.get(),
-                               video_encoder_context.get() });
+    set_video_frame_handler(ctx,
+                            sc::VideoFrameWriter { format_context.get(),
+                                                   video_encoder_context.get(),
+                                                   video_stream.get() });
 
     set_stream_end_handler(ctx,
                            sc::StreamFinalizer { format_context.get(),
                                                  audio_encoder_context.get(),
-                                                 video_encoder_context.get() });
+                                                 video_encoder_context.get(),
+                                                 stream.get(),
+                                                 video_stream.get() });
 
     ctx.run();
 }

@@ -7,9 +7,11 @@ namespace sc
 {
 
 VideoFrameWriter::VideoFrameWriter(AVFormatContext* fmt_context,
-                                   AVCodecContext* codec_context)
+                                   AVCodecContext* codec_context,
+                                   AVStream* stream)
     : format_context_ { fmt_context }
     , codec_context_ { codec_context }
+    , stream_ { stream }
     , frame_ { av_frame_alloc() }
 {
 }
@@ -46,10 +48,12 @@ auto VideoFrameWriter::operator()(CUdeviceptr cu_device_ptr,
     frame_->colorspace = codec_context_->colorspace;
     frame_->chroma_location = codec_context_->chroma_sample_location;
 
-    frame_->pts = sc::global_elapsed.value();
+    frame_->pts = frame_number_++;
 
-    sc::send_frame(
-        frame_.get(), codec_context_.get(), format_context_.get(), 1);
+    sc::send_frame(frame_.get(),
+                   codec_context_.get(),
+                   format_context_.get(),
+                   stream_.get());
 }
 
 } // namespace sc
