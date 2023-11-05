@@ -3,6 +3,12 @@
 
 Typical screen capture utilities copy the framebuffer data between host and GPU memory when encoding, causing significant load on the host CPU. This can affect both the running applications and the quality of the resulting media. *Shadow Cast* captures and encodes the framebuffer directly on the GPU with very little or no performance penalty to running applications. This makes *Shadow Cast* ideal for capturing gameplay footage, even in the most hardware intensive games.
 
+#### Example - Cyberpunk 2077
+[![Cyberpunk 2077](https://img.youtube.com/vi/cczxo_S7tV8/0.jpg)](https://www.youtube.com/watch?v=cczxo_S7tV8)
+
+#### Example - Ready Or Not
+[![Ready Or Not](https://img.youtube.com/vi/VNhn4J8qXa4/0.jpg)](https://www.youtube.com/watch?v=VNhn4J8qXa4)
+
 ### Capturing
 You can start a capture session using...
 
