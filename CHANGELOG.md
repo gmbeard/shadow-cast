@@ -1,3 +1,8 @@
+## 0.2.0
+### MINOR Changes:
+- Fixes some timing issues that were causing audio / video desync.
+- Fixes `mp4` output containers.
+
 ## 0.1.0
 ### Initial Release:
 - Limited support
