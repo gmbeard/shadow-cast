@@ -21,7 +21,7 @@ Ctrl+C / SIGINT will stop the capture session and finalize the output media.
 ### Help. I'm getting the following error
 
 #### `ERROR: Couldn't create NvFBC instance`
-*Shadow Cast* uses the *NvFBC* facility to provide efficient, low-latency framebuffer capture. By default, nvidia disables this on most (if not all) of its commercial GPUs. However, there are two ways around this restriction...
+*Shadow Cast* uses the *NvFBC* facility to provide efficient, low-latency framebuffer capture. By default, nvidia disables this on most (if not all) of its consumer-level GPUs. However, there are two ways around this restriction...
 
 - You can find a utility to patch your nvidia drivers in the [keylase/nvidia-patch](https://github.com/keylase/nvidia-patch) GitHub repo.
 - You can obtain a "key" to unlock this feature at runtime. You can then set the `SHADOW_CAST_NVFBC_KEY` environment variable to the base64 encoded value of this key prior to invoking `shadow-cast`. Unfortunately, due to the uncertainty around the legalities of this method, I'm unable to provide this key in this project's source.

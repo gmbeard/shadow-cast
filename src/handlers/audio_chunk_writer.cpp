@@ -2,13 +2,44 @@
 #include "av/sample_format.hpp"
 #include <algorithm>
 #include <memory>
+#include <numeric>
+
+namespace
+{
+
+auto append_chunk(sc::MediaChunk const& source, sc::MediaChunk& dest) -> void
+{
+    dest.sample_count += source.sample_count;
+    auto channels_required =
+        std::max(0,
+                 static_cast<int>(source.channel_buffers().size() -
+                                  dest.channel_buffers().size()));
+
+    while (channels_required--)
+        dest.channel_buffers().push_back(sc::DynamicBuffer {});
+
+    auto it = source.channel_buffers().begin();
+    auto out_it = dest.channel_buffers().begin();
+
+    for (; it != source.channel_buffers().end(); ++it) {
+        auto& src_buf = *it;
+        auto& dst_buf = *out_it++;
+
+        auto dst_data = dst_buf.prepare(src_buf.size());
+        std::copy(
+            src_buf.data().begin(), src_buf.data().end(), dst_data.begin());
+        dst_buf.commit(dst_data.size());
+    }
+}
+
+} // namespace
 
 namespace sc
 {
 auto send_frame(AVFrame* frame,
                 AVCodecContext* ctx,
                 AVFormatContext* fmt,
-                int stream_index) -> void
+                AVStream* stream) -> void
 {
     using PacketPtr = std::unique_ptr<AVPacket, auto(*)(AVPacket*)->void>;
     PacketPtr packet { av_packet_alloc(), [](auto pkt) {
@@ -28,7 +59,11 @@ auto send_frame(AVFrame* frame,
             throw std::runtime_error { "receive packet error" };
         }
 
-        packet->stream_index = stream_index;
+        packet->stream_index = stream->index;
+        packet->pts =
+            av_rescale_q(packet->pts, ctx->time_base, stream->time_base);
+        packet->dts =
+            av_rescale_q(packet->dts, ctx->time_base, stream->time_base);
 
         response = av_interleaved_write_frame(fmt, packet.get());
         if (response < 0) {
@@ -44,30 +79,35 @@ ChunkWriter::ChunkWriter(AVFormatContext* format_context,
     , codec_context_ { codec_context }
     , stream_ { stream }
     , frame_ { av_frame_alloc() }
+    , total_samples_written_ { 0 }
 {
 }
 
-auto ChunkWriter::operator()(sc::MediaChunk chunk) -> void
+auto ChunkWriter::operator()(MediaChunk chnk) -> void
 {
+    /* Append this chunk to our buffered data...
+     */
+    append_chunk(chnk, buffer_);
+
     sc::SampleFormat const sample_format =
         sc::convert_from_libav_format(codec_context_->sample_fmt);
 
     auto const sample_size = sc::sample_format_size(sample_format);
     auto const interleaved = sc::is_interleaved_format(sample_format);
-    auto const sample_rate_per_ms = codec_context_->sample_rate / 1'000;
 
-    auto samples_remaining = chunk.sample_count;
+    auto samples_remaining = buffer_.sample_count;
 
     while (samples_remaining) {
         sc::BorrowedPtr<AVFrame> frame = frame_.get();
-        auto const samples_written = chunk.sample_count - samples_remaining;
 
-        /* TODO: We need to ensure we're filling the entire
-         * buffer of a frame. If `chunk`'s size isn't fully
-         * divisible by `codec_context_->frame_size` then we
-         * must queue any remaning chunk bytes until we
-         * have enough to fill a frame...
+        /* We need to ensure we fill an output frame completely, otherwise
+         * the audio/video sync will be off. If we don't have enough samples
+         * then we just don't emit a frame and wait until then next
+         * time we're called and check again...
          */
+        if (static_cast<int>(samples_remaining) < codec_context_->frame_size)
+            break;
+
         frame->nb_samples = codec_context_->frame_size
                                 ? std::min(codec_context_->frame_size,
                                            static_cast<int>(samples_remaining))
@@ -75,17 +115,18 @@ auto ChunkWriter::operator()(sc::MediaChunk chunk) -> void
 
         frame->format = codec_context_->sample_fmt;
         frame->sample_rate = codec_context_->sample_rate;
-        frame->channels = interleaved ? 2 : chunk.channel_buffers().size();
+        frame->channels = interleaved ? 2 : buffer_.channel_buffers().size();
 
         frame->channel_layout = AV_CH_LAYOUT_STEREO;
-        frame->pts = chunk.timestamp_ms + samples_written / sample_rate_per_ms;
+        frame->pts = total_samples_written_;
+        total_samples_written_ += frame->nb_samples;
 
         sc::initialize_writable_buffer(frame.get());
 
         AVFrameUnrefGuard unref_guard { frame };
 
         auto n = 0;
-        for (auto& channel_buffer : chunk.channel_buffers()) {
+        for (auto& channel_buffer : buffer_.channel_buffers()) {
             std::size_t const num_bytes =
                 interleaved ? frame->nb_samples * sample_size * 2
                             : frame->nb_samples * sample_size;
@@ -100,8 +141,12 @@ auto ChunkWriter::operator()(sc::MediaChunk chunk) -> void
         }
 
         samples_remaining -= frame->nb_samples;
+        buffer_.sample_count -= frame->nb_samples;
 
-        send_frame(frame.get(), codec_context_.get(), format_context_.get(), 0);
+        send_frame(frame.get(),
+                   codec_context_.get(),
+                   format_context_.get(),
+                   stream_.get());
     }
 }
 

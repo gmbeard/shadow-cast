@@ -16,6 +16,7 @@ struct DynamicBuffer
     auto data() noexcept -> std::span<std::uint8_t>;
     auto data() const noexcept -> std::span<std::uint8_t const>;
     auto size() const noexcept -> std::size_t;
+    auto capacity() const noexcept -> std::size_t;
 
 private:
     std::vector<std::uint8_t> data_;

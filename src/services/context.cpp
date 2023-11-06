@@ -13,7 +13,8 @@
 #include <tuple>
 #include <vector>
 
-std::size_t constexpr kFrameTimeInMs = 1'000 / 60;
+std::size_t constexpr kNsPerSec = 1'000'000'000;
+std::size_t constexpr kFrameTimeInNs = kNsPerSec / 60;
 
 namespace
 {
@@ -39,10 +40,10 @@ struct RestoreSigmaskGuard
     sigset_t* restore;
 };
 
-auto from_milliseconds(std::uint32_t val) noexcept -> timespec
+auto from_nanoseconds(std::uint64_t val) noexcept -> timespec
 {
-    return timespec { .tv_sec = val / 1'000,
-                      .tv_nsec = (val % 1'000) * 1'000'000 };
+    return timespec { .tv_sec = static_cast<time_t>(val / kNsPerSec),
+                      .tv_nsec = static_cast<time_t>(val % kNsPerSec) };
 }
 
 auto tick_timers(sc::ReadinessRegister::FrameTickRegisterType& timers,
@@ -108,7 +109,7 @@ auto Context::run() -> void
         for (; initialized_pos != reg_.end(); ++initialized_pos) {
             auto& svc = std::get<1>(*initialized_pos);
             svc->init(ReadinessRegister {
-                *svc, notifications, timers, kFrameTimeInMs });
+                *svc, notifications, timers, kFrameTimeInNs });
         }
     }
     catch (...) {
@@ -139,17 +140,17 @@ auto Context::run() -> void
                    });
 
     Elapsed const elapsed;
-    auto frame_start = elapsed.value();
+    auto frame_start = elapsed.nanosecond_value();
 
     while (true) {
-        auto const frame_stop = elapsed.value();
+        auto const frame_stop = elapsed.nanosecond_value();
         auto const frame_time = frame_stop - frame_start;
         frame_start = frame_stop;
 
         auto const next_timeout =
-            tick_timers(timers, frame_time, kFrameTimeInMs);
+            tick_timers(timers, frame_time, kFrameTimeInNs);
 
-        auto sleep_for = from_milliseconds(next_timeout);
+        auto sleep_for = from_nanoseconds(next_timeout);
         auto const poll_result = ppoll(
             poll_events.data(), poll_events.size(), &sleep_for, &emptyset);
 
