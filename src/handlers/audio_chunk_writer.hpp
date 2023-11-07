@@ -13,7 +13,7 @@ struct ChunkWriter
                          AVCodecContext* codec_context,
                          AVStream* stream) noexcept;
 
-    auto operator()(MediaChunk chunk) -> void;
+    auto operator()(MediaChunk const& chunk) -> void;
 
 private:
     BorrowedPtr<AVFormatContext> format_context_;
@@ -21,7 +21,6 @@ private:
     BorrowedPtr<AVStream> stream_;
     FramePtr frame_;
     std::size_t total_samples_written_ { 0 };
-    MediaChunk buffer_;
 };
 
 auto send_frame(AVFrame* frame,

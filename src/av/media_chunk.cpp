@@ -3,6 +3,8 @@
 
 namespace sc
 {
+auto DynamicBuffer::reset() noexcept -> void { bytes_committed_ = 0; }
+
 auto DynamicBuffer::prepare(std::size_t n) -> std::span<std::uint8_t>
 {
     if (n > capacity())
@@ -43,6 +45,14 @@ auto DynamicBuffer::size() const noexcept -> std::size_t
 auto DynamicBuffer::capacity() const noexcept -> std::size_t
 {
     return data_.size() - size();
+}
+
+auto MediaChunk::reset() noexcept -> void
+{
+    timestamp_ms = 0;
+    sample_count = 0;
+    for (auto& b : channel_buffers())
+        b.reset();
 }
 
 auto MediaChunk::channel_buffers() noexcept -> std::vector<DynamicBuffer>&

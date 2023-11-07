@@ -178,8 +178,10 @@ auto run(int argc, char** argv) -> void
 
     sc::Context ctx;
     ctx.services().add_from_factory<sc::AudioService>([&] {
-        return std::make_unique<sc::AudioService>(supported_formats.front(),
-                                                  48'000);
+        return std::make_unique<sc::AudioService>(
+            supported_formats.front(),
+            48'000,
+            audio_encoder_context->frame_size);
     });
 
     ctx.services().add_from_factory<sc::VideoService>([&] {

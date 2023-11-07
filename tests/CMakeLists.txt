@@ -4,6 +4,8 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 add_library(testing OBJECT testing.cpp)
 
 make_test(NAME base64_tests SOURCES base64_tests.cpp SIMPLE)
+make_test(NAME intrusive_list_tests SOURCES intrusive_list_tests.cpp SIMPLE)
+make_test(NAME pool_tests SOURCES pool_tests.cpp SIMPLE)
 
 if(EXISTS ${PROJECT_SOURCE_DIR}/.private/nvfbc.key)
     file(STRINGS ${PROJECT_SOURCE_DIR}/.private/nvfbc.key SHADOW_CAST_NVFBC_KEY)
