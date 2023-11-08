@@ -164,8 +164,8 @@ auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
     create_capture_params.bWithCursor = NVFBC_TRUE;
     create_capture_params.eTrackingType = NVFBC_TRACKING_SCREEN;
     create_capture_params.dwSamplingRateMs = 1000u / 60;
-    create_capture_params.bAllowDirectCapture = NVFBC_TRUE;
-    create_capture_params.bPushModel = NVFBC_TRUE;
+    create_capture_params.bAllowDirectCapture = NVFBC_FALSE;
+    create_capture_params.bPushModel = NVFBC_FALSE;
 
     if (nvfbc.nvFBCCreateCaptureSession(nvfbc_handle, &create_capture_params) !=
         NVFBC_SUCCESS)
