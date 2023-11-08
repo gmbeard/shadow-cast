@@ -1,31 +1,66 @@
 #include "services/audio_service.hpp"
 #include "utils/elapsed.hpp"
+#include <algorithm>
 #include <array>
+#include <cassert>
+#include <cinttypes>
 #include <errno.h>
 #include <fcntl.h>
 #include <span>
 #include <system_error>
 #include <unistd.h>
 
+using namespace std::literals::string_literals;
+
 namespace
 {
 
-auto constexpr kPipeRead = 0;
-auto constexpr kPipeWrite = 1;
-
-auto discard_pipe_data(int pipe_read_fd, std::size_t n)
+auto transfer_chunk_n(sc::MediaChunk& source,
+                      std::size_t num_bytes,
+                      sc::MediaChunk& dest) -> void
 {
-    std::array<std::uint8_t, 32> discard_buffer {};
-    while (n > 0) {
-        auto n_read = read(pipe_read_fd,
-                           discard_buffer.data(),
-                           std::min(n, discard_buffer.size()));
-        if (n_read < 0)
-            break;
+    auto channels_required =
+        std::max(0,
+                 static_cast<int>(source.channel_buffers().size() -
+                                  dest.channel_buffers().size()));
 
-        n -= n_read;
+    while (channels_required--)
+        dest.channel_buffers().push_back(sc::DynamicBuffer {});
+
+    auto it = source.channel_buffers().begin();
+    auto out_it = dest.channel_buffers().begin();
+
+    for (; it != source.channel_buffers().end(); ++it) {
+        auto& src_buf = *it;
+        auto& dst_buf = *out_it++;
+
+        assert(src_buf.size() >= num_bytes);
+
+        auto dst_data = dst_buf.prepare(num_bytes);
+        std::copy_n(src_buf.data().begin(), num_bytes, dst_data.begin());
+        dst_buf.commit(num_bytes);
+        src_buf.consume(num_bytes);
     }
 }
+
+template <typename List, typename Pool>
+struct ReturnToPoolGuard
+{
+    List& list;
+    Pool& pool;
+
+    ~ReturnToPoolGuard()
+    {
+        auto it = list.begin();
+        while (it != list.end()) {
+            auto item = typename Pool::ItemPtr { &*it, pool };
+            it = list.erase(it);
+        }
+    }
+};
+
+template <typename List, typename Pool>
+ReturnToPoolGuard(List&, Pool&) -> ReturnToPoolGuard<List, Pool>;
 
 } // namespace
 
@@ -74,12 +109,19 @@ static void on_process(void* userdata)
                                  ? (num_bytes / 2) / sample_size
                                  : num_bytes / sample_size;
 
-    sc::MediaChunk chunk;
+    auto pool_chunk = data->service->chunk_pool().get();
+
+    sc::MediaChunk& chunk = *pool_chunk;
     chunk.timestamp_ms = sc::global_elapsed.value();
     chunk.sample_count = num_samples;
     std::span channel_data { buf->datas, buf->n_datas };
+    while (chunk.channel_buffers().size() < channel_data.size())
+        chunk.channel_buffers().push_back(sc::DynamicBuffer {});
+
+    auto out_buffer_it = chunk.channel_buffers().begin();
+
     for (auto const& d : channel_data) {
-        sc::DynamicBuffer chunk_buffer;
+        sc::DynamicBuffer& chunk_buffer = *out_buffer_it++;
         auto target_bytes = chunk_buffer.prepare(num_bytes);
 
         std::span source_bytes { reinterpret_cast<std::uint8_t const*>(d.data),
@@ -87,11 +129,9 @@ static void on_process(void* userdata)
 
         std::copy(begin(source_bytes), end(source_bytes), begin(target_bytes));
         chunk_buffer.commit(num_bytes);
-
-        chunk.channel_buffers().push_back(std::move(chunk_buffer));
     }
 
-    add_chunk(*data->service, std::move(chunk));
+    add_chunk(*data->service, std::move(pool_chunk));
 }
 
 /* Be notified when the stream param changes. We're only looking at the
@@ -215,18 +255,28 @@ auto stop_pipewire(sc::AudioLoopData& data) noexcept -> void
 namespace sc
 {
 
-AudioService::AudioService(SampleFormat sample_format, std::size_t sample_rate)
+AudioService::AudioService(SampleFormat sample_format,
+                           std::size_t sample_rate,
+                           std::size_t frame_size)
     : sample_format_ { sample_format }
     , sample_rate_ { sample_rate }
+    , frame_size_ { frame_size }
 {
+}
+
+AudioService::~AudioService()
+{
+    ReturnToPoolGuard return_to_pool_guard { available_chunks_, chunk_pool_ };
+}
+
+auto AudioService::chunk_pool() noexcept -> SynchronizedPool<MediaChunk>&
+{
+    return chunk_pool_;
 }
 
 auto AudioService::on_init(ReadinessRegister reg) -> void
 {
-    if (pipe2(pipe_.data(), O_NONBLOCK) < 0)
-        throw std::system_error { errno, std::system_category() };
-
-    reg(pipe_[kPipeRead], &dispatch_chunks);
+    reg(FrameTimeRatio(1, 2), &dispatch_chunks);
 
     loop_data_ = {};
     loop_data_.service = this;
@@ -238,9 +288,6 @@ auto AudioService::on_init(ReadinessRegister reg) -> void
 auto AudioService::on_uninit() -> void
 {
     stop_pipewire(loop_data_);
-    close(pipe_[kPipeRead]);
-    close(pipe_[kPipeWrite]);
-    pipe_ = { -1, -1 };
 
     if (stream_end_listener_)
         (*stream_end_listener_)();
@@ -251,27 +298,81 @@ auto dispatch_chunks(sc::Service& svc) -> void
     auto& self = static_cast<AudioService&>(svc);
 
     decltype(self.available_chunks_) tmp_chunks;
+    ReturnToPoolGuard return_to_pool_guard { tmp_chunks, self.chunk_pool() };
 
     {
         std::lock_guard data_lock { self.data_mutex_ };
-        tmp_chunks.splice(tmp_chunks.end(), self.available_chunks_);
-        discard_pipe_data(self.pipe_[kPipeRead], tmp_chunks.size());
+        auto it = self.available_chunks_.begin();
+        for (; it != self.available_chunks_.end(); ++it) {
+            if (!self.frame_size_ || it->sample_count < self.frame_size_)
+                break;
+        }
+
+        tmp_chunks.splice(tmp_chunks.begin(),
+                          self.available_chunks_,
+                          self.available_chunks_.begin(),
+                          it);
     }
 
     if (auto& listener = self.chunk_listener_; listener) {
-        for (auto&& chunk : tmp_chunks)
-            (*listener)(std::move(chunk));
+        for (auto const& chunk : tmp_chunks) {
+            assert(chunk.sample_count == self.frame_size_);
+            (*listener)(chunk);
+        }
     }
 }
 
-auto add_chunk(AudioService& svc, MediaChunk&& chunk) -> void
+auto add_chunk(AudioService& svc,
+               sc::SynchronizedPool<MediaChunk>::ItemPtr chunk) -> void
 {
-    static std::array<std::uint8_t, 1> const signal_byte = { 0x42 };
+    auto const sample_size = sc::sample_format_size(svc.sample_format_);
+    auto const interleaved = sc::is_interleaved_format(svc.sample_format_);
+
+    using namespace std::literals::string_literals;
 
     {
         std::lock_guard data_lock { svc.data_mutex_ };
-        svc.available_chunks_.push_back(std::move(chunk));
-        write(svc.pipe_[kPipeWrite], signal_byte.data(), 1);
+
+        if (!svc.frame_size_) {
+            svc.available_chunks_.push_back(chunk.release());
+            return;
+        }
+
+        if (!svc.available_chunks_.empty()) {
+            auto it = std::next(svc.available_chunks_.end(), -1);
+
+            if (svc.frame_size_ > it->sample_count) {
+                auto const samples_to_copy = std::min(
+                    chunk->sample_count, svc.frame_size_ - it->sample_count);
+
+                if (samples_to_copy) {
+                    transfer_chunk_n(*chunk,
+                                     sample_size * samples_to_copy *
+                                         (interleaved ? 2 : 1),
+                                     *it);
+                    it->sample_count += samples_to_copy;
+                    chunk->sample_count -= samples_to_copy;
+                }
+            }
+        }
+
+        while (chunk->sample_count > svc.frame_size_) {
+            auto new_chunk = svc.chunk_pool().get();
+
+            transfer_chunk_n(*chunk,
+                             sample_size * svc.frame_size_ *
+                                 (interleaved ? 2 : 1),
+                             *new_chunk);
+
+            chunk->sample_count -= svc.frame_size_;
+            new_chunk->sample_count += svc.frame_size_;
+
+            svc.available_chunks_.push_back(new_chunk.release());
+        }
+
+        if (chunk->sample_count) {
+            svc.available_chunks_.push_back(chunk.release());
+        }
     }
 }
 

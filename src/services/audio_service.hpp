@@ -5,6 +5,8 @@
 #include "av/sample_format.hpp"
 #include "services/readiness.hpp"
 #include "services/service.hpp"
+#include "utils/intrusive_list.hpp"
+#include "utils/pool.hpp"
 #include "utils/receiver.hpp"
 #include <array>
 #include <list>
@@ -31,18 +33,24 @@ struct AudioLoopData
 struct AudioService final : Service
 {
     friend auto dispatch_chunks(Service&) -> void;
-    friend auto add_chunk(AudioService&, MediaChunk&&) -> void;
+    friend auto add_chunk(AudioService&, SynchronizedPool<MediaChunk>::ItemPtr)
+        -> void;
 
-    using ChunkReceiverType = Receiver<void(MediaChunk&&)>;
+    using ChunkReceiverType = Receiver<void(MediaChunk const&)>;
     using StreamEndReceiverType = Receiver<void()>;
 
-    AudioService(SampleFormat, std::size_t);
+    AudioService(SampleFormat,
+                 std::size_t /*sample_rate*/,
+                 std::size_t /*frame_size*/);
 
+    ~AudioService();
     /* AudioService must have a stable `this` pointer while
      * the h/w loop is running, so disable copy / move...
      */
     AudioService(AudioService const&) = delete;
     auto operator=(AudioService const&) -> AudioService& = delete;
+
+    auto chunk_pool() noexcept -> SynchronizedPool<MediaChunk>&;
 
 protected:
     auto on_init(ReadinessRegister) -> void override;
@@ -66,15 +74,17 @@ private:
     std::array<int, 2> pipe_ { -1, -1 };
     std::optional<ChunkReceiverType> chunk_listener_;
     std::optional<StreamEndReceiverType> stream_end_listener_;
-    std::list<MediaChunk> available_chunks_;
+    IntrusiveList<MediaChunk> available_chunks_;
     std::mutex data_mutex_;
     AudioLoopData loop_data_ {};
     SampleFormat sample_format_;
     std::size_t sample_rate_;
+    std::size_t frame_size_;
+    SynchronizedPool<MediaChunk> chunk_pool_;
 };
 
 auto dispatch_chunks(sc::Service&) -> void;
-auto add_chunk(AudioService&, MediaChunk&&) -> void;
+auto add_chunk(AudioService&, SynchronizedPool<MediaChunk>::ItemPtr) -> void;
 
 } // namespace sc
 
