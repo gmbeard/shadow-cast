@@ -14,7 +14,6 @@
 #include <vector>
 
 std::size_t constexpr kNsPerSec = 1'000'000'000;
-std::size_t constexpr kFrameTimeInNs = kNsPerSec / 60;
 
 namespace
 {
@@ -69,6 +68,11 @@ auto tick_timers(sc::ReadinessRegister::FrameTickRegisterType& timers,
 
 namespace sc
 {
+Context::Context(std::uint32_t fps) noexcept
+    : fps_ { fps }
+{
+}
+
 auto Context::services() noexcept -> ServiceRegistry& { return reg_; }
 
 auto Context::request_stop() noexcept -> void { stop_requested_ = true; }
@@ -77,6 +81,8 @@ auto Context::run() -> void
 {
     using Notifications = ReadinessRegister::NotifyRegisterType;
     using Timers = ReadinessRegister::FrameTickRegisterType;
+
+    auto const frame_time_in_ns = kNsPerSec / fps_;
 
     Notifications notifications;
     Timers timers;
@@ -92,7 +98,7 @@ auto Context::run() -> void
         for (; initialized_pos != reg_.end(); ++initialized_pos) {
             auto& svc = std::get<1>(*initialized_pos);
             svc->init(ReadinessRegister {
-                *svc, notifications, timers, kFrameTimeInNs });
+                *svc, notifications, timers, frame_time_in_ns });
         }
     }
     catch (...) {
@@ -131,7 +137,7 @@ auto Context::run() -> void
         frame_start = frame_stop;
 
         auto const next_timeout =
-            tick_timers(timers, frame_time, kFrameTimeInNs);
+            tick_timers(timers, frame_time, frame_time_in_ns);
 
         auto sleep_for = from_nanoseconds(next_timeout);
         auto const poll_result =

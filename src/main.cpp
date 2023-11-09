@@ -9,9 +9,6 @@
 #include <thread>
 #include <vector>
 
-auto constexpr kAudioEncoderName = "aac";
-auto constexpr kVideoEncoderName = "h264_nvenc";
-
 auto block_signals(std::initializer_list<decltype(SIGINT)> sigs) -> void
 {
     sigset_t blocked_signals;
@@ -71,15 +68,9 @@ struct DestroyCaptureSessionGuard
     sc::NvFBC nvfbc;
 };
 
-auto run(int argc, char** argv) -> void
+auto run(sc::Parameters const& params) -> void
 {
-    block_signals({ SIGINT });
-    auto const args = sc::parse_cmd_line(argc, argv);
-    if (!args.size())
-        throw std::runtime_error { "Missing parameter: output file" };
-
     auto const display = sc::get_display();
-
     /* CUDA and NvFBC...
      */
     auto nvcudalib = sc::load_cuda();
@@ -94,17 +85,16 @@ auto run(int argc, char** argv) -> void
      * one function that returns an RAII object...
      */
     auto nvfbc_instance = sc::create_nvfbc_session(nvfbc);
-    sc::create_nvfbc_capture_session(nvfbc_instance.get(), nvfbc);
+    sc::create_nvfbc_capture_session(
+        nvfbc_instance.get(), nvfbc, params.frame_rate);
 
     DestroyCaptureSessionGuard destroy_capture_session_guard {
         nvfbc_instance.get(), nvfbc
     };
 
-    PipewireInit pw { argc, argv };
-
     AVFormatContext* fc_tmp;
     if (auto const ret = avformat_alloc_output_context2(
-            &fc_tmp, nullptr, nullptr, args.front().c_str());
+            &fc_tmp, nullptr, nullptr, params.output_file.c_str());
         ret < 0) {
         throw sc::FormatError { "Failed to allocate output context: " +
                                 sc::av_error_to_string(ret) };
@@ -112,10 +102,14 @@ auto run(int argc, char** argv) -> void
 
     sc::FormatContextPtr format_context { fc_tmp };
     sc::BorrowedPtr<AVCodec> encoder { avcodec_find_encoder_by_name(
-        kAudioEncoderName) };
+        params.audio_encoder.c_str()) };
     if (!encoder) {
         throw sc::CodecError { "Failed to find required audio codec" };
     }
+
+    if (!sc::is_sample_rate_supported(params.sample_rate, encoder))
+        throw std::runtime_error { "Sample rate not supported by codec: " +
+                                   std::to_string(params.sample_rate) };
 
     auto const supported_formats = find_supported_formats(encoder);
     if (!supported_formats.size())
@@ -128,12 +122,11 @@ auto run(int argc, char** argv) -> void
 
     audio_encoder_context->channels = 2;
     audio_encoder_context->channel_layout = av_get_default_channel_layout(2);
-    audio_encoder_context->sample_rate = 48'000;
+    audio_encoder_context->sample_rate = params.sample_rate;
     audio_encoder_context->sample_fmt =
         sc::convert_to_libav_format(supported_formats.front());
     audio_encoder_context->bit_rate = 128'000;
-    audio_encoder_context->time_base.num = 1;
-    audio_encoder_context->time_base.den = 48'000;
+    audio_encoder_context->time_base = AVRational { 1, params.sample_rate };
     audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
     if (auto const ret =
@@ -165,8 +158,12 @@ auto run(int argc, char** argv) -> void
     if (!buffer_pool)
         throw sc::CodecError { "Failed to allocate video buffer pool" };
 
-    auto video_encoder_context = sc::create_video_encoder(
-        kVideoEncoderName, cuda_ctx.get(), buffer_pool.get(), display.get());
+    auto video_encoder_context =
+        sc::create_video_encoder(params.video_encoder.c_str(),
+                                 cuda_ctx.get(),
+                                 buffer_pool.get(),
+                                 display.get(),
+                                 params.frame_rate);
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
         format_context.get(), video_encoder_context->codec) };
@@ -185,7 +182,7 @@ auto run(int argc, char** argv) -> void
     }
 
     if (auto const ret = avio_open(
-            &format_context->pb, args.front().c_str(), AVIO_FLAG_WRITE);
+            &format_context->pb, params.output_file.c_str(), AVIO_FLAG_WRITE);
         ret < 0) {
         throw sc::IOError { "Failed to open output file: " +
                             sc::av_error_to_string(ret) };
@@ -203,16 +200,19 @@ auto run(int argc, char** argv) -> void
                             sc::av_error_to_string(ret) };
     }
 
-    sc::Context ctx;
-    sc::Context audio_ctx;
+    sc::Context ctx { static_cast<std::uint32_t>(params.frame_rate) };
+    sc::Context audio_ctx { static_cast<std::uint32_t>(params.frame_rate) };
 
     ctx.services().add<sc::SignalService>(sc::SignalService {});
-    add_signal_handler(ctx, SIGINT, [&](std::uint32_t) { ctx.request_stop(); });
+    add_signal_handler(ctx, SIGINT, [&](std::uint32_t) {
+        ctx.request_stop();
+        audio_ctx.request_stop();
+    });
 
     audio_ctx.services().add_from_factory<sc::AudioService>([&] {
         return std::make_unique<sc::AudioService>(
             supported_formats.front(),
-            48'000,
+            params.sample_rate,
             audio_encoder_context->frame_size);
     });
 
@@ -239,7 +239,6 @@ auto run(int argc, char** argv) -> void
 
     auto audio_thread = std::thread([&] { audio_ctx.run(); });
     ctx.run();
-    audio_ctx.request_stop();
     audio_thread.join();
 
     std::cerr << "Finalizing output...\n";
@@ -248,10 +247,29 @@ auto run(int argc, char** argv) -> void
                                    sc::av_error_to_string(ret) };
 }
 
-auto main(int argc, char** argv) -> int
+auto main(int argc, char const** argv) -> int
 {
     try {
-        run(argc, argv);
+        block_signals({ SIGINT });
+        auto const params =
+            sc::get_parameters(sc::parse_cmd_line(argc - 1, argv + 1));
+
+        if (!params) {
+            switch (params.error().type) {
+            case sc::CmdLineError::show_help:
+                sc::output_help();
+                break;
+            case sc::CmdLineError::show_version:
+                sc::output_version();
+                break;
+            default:
+                throw params.error();
+            }
+        }
+        else {
+            PipewireInit pw { argc, const_cast<char**>(argv) };
+            run(sc::get_value(std::move(params)));
+        }
     }
     catch (std::exception const& e) {
         std::cerr << "ERROR: " << e.what() << '\n';

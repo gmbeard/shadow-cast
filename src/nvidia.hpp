@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <cinttypes>
 
 namespace sc
 {
@@ -63,7 +64,8 @@ auto load_nvfbc() -> NvFBCLib;
     -> NvFBCSessionHandlePtr;
 
 auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
-                                  NvFBC nvfbc) -> void;
+                                  NvFBC nvfbc,
+                                  std::uint32_t fps) -> void;
 auto destroy_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                    NvFBC nvfbc) -> void;
 } // namespace sc

@@ -29,4 +29,11 @@ auto av_error_to_string(int err) -> std::string
         error_string = "Uknown error";
     return error_string;
 }
+
+CmdLineError::CmdLineError(Type t, std::string const& msg)
+    : std::runtime_error { msg }
+    , type { t }
+{
+}
+
 } // namespace sc
