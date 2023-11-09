@@ -18,16 +18,17 @@ add_library(shadow-cast-obj
     handlers/video_frame_writer.cpp
 
     services/audio_service.cpp
+    services/context.cpp
     services/readiness.cpp
     services/service.cpp
     services/service_registry.cpp
+    services/signal_service.cpp
     services/video_service.cpp
-    services/context.cpp
 
+    utils/cmd_line.cpp
+    utils/base64.cpp
     utils/elapsed.cpp
     utils/result.cpp
-    utils/base64.cpp
-	utils/cmd_line.cpp
 
     error.cpp
     logging.cpp

@@ -302,11 +302,12 @@ auto dispatch_chunks(sc::Service& svc) -> void
 
     {
         std::lock_guard data_lock { self.data_mutex_ };
-        auto it = self.available_chunks_.begin();
-        for (; it != self.available_chunks_.end(); ++it) {
-            if (!self.frame_size_ || it->sample_count < self.frame_size_)
-                break;
-        }
+        auto it = std::find_if(self.available_chunks_.begin(),
+                               self.available_chunks_.end(),
+                               [&](auto const& chunk) {
+                                   return self.frame_size_ &&
+                                          chunk.sample_count < self.frame_size_;
+                               });
 
         tmp_chunks.splice(tmp_chunks.begin(),
                           self.available_chunks_,

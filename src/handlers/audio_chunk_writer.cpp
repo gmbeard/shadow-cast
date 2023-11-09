@@ -1,9 +1,24 @@
 #include "handlers/audio_chunk_writer.hpp"
 #include "av/sample_format.hpp"
+#include "error.hpp"
 #include <algorithm>
 #include <cassert>
 #include <memory>
+#include <mutex>
 #include <numeric>
+
+std::mutex send_frame_mutex {};
+
+namespace
+{
+template <typename F>
+auto invoke_synchronized(std::mutex& mutex, F&& f)
+{
+    std::lock_guard lock { mutex };
+    return std::forward<F>(f)();
+}
+
+} // namespace
 
 namespace sc
 {
@@ -13,15 +28,16 @@ auto send_frame(AVFrame* frame,
                 AVStream* stream) -> void
 {
     using PacketPtr = std::unique_ptr<AVPacket, auto(*)(AVPacket*)->void>;
-    PacketPtr packet { av_packet_alloc(), [](auto pkt) {
-                          av_packet_unref(pkt);
-                          av_packet_free(&pkt);
-                      } };
+    PacketPtr packet { av_packet_alloc(),
+                       [](auto pkt) { av_packet_free(&pkt); } };
 
-    auto response = avcodec_send_frame(ctx, frame);
+    auto response = invoke_synchronized(
+        send_frame_mutex, [&] { return avcodec_send_frame(ctx, frame); });
 
     while (response >= 0) {
-        response = avcodec_receive_packet(ctx, packet.get());
+        response = invoke_synchronized(send_frame_mutex, [&] {
+            return avcodec_receive_packet(ctx, packet.get());
+        });
         if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
             break;
         }
@@ -31,14 +47,14 @@ auto send_frame(AVFrame* frame,
         }
 
         packet->stream_index = stream->index;
-        packet->pts =
-            av_rescale_q(packet->pts, ctx->time_base, stream->time_base);
-        packet->dts =
-            av_rescale_q(packet->dts, ctx->time_base, stream->time_base);
+        av_packet_rescale_ts(packet.get(), ctx->time_base, stream->time_base);
 
-        response = av_interleaved_write_frame(fmt, packet.get());
+        response = invoke_synchronized(send_frame_mutex, [&] {
+            return av_interleaved_write_frame(fmt, packet.get());
+        });
         if (response < 0) {
-            throw std::runtime_error { "write packet error" };
+            throw std::runtime_error { "write packet error: " +
+                                       av_error_to_string(response) };
         }
     }
 }

@@ -2,6 +2,7 @@
 #define SHADOW_CAST_SERVICES_CONTEXT_HPP_INCLUDED
 
 #include "services/service_registry.hpp"
+#include <atomic>
 
 namespace sc
 {
@@ -14,8 +15,10 @@ struct Context
 
     auto run() -> void;
     auto services() noexcept -> ServiceRegistry&;
+    auto request_stop() noexcept -> void;
 
 private:
+    std::atomic<bool> stop_requested_ { false };
     ServiceRegistry reg_;
 };
 

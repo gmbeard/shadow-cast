@@ -3,11 +3,35 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
 #include <iostream>
+#include <signal.h>
+#include <thread>
 #include <vector>
 
 auto constexpr kAudioEncoderName = "aac";
 auto constexpr kVideoEncoderName = "h264_nvenc";
+
+auto block_signals(std::initializer_list<decltype(SIGINT)> sigs) -> void
+{
+    sigset_t blocked_signals;
+    sigemptyset(&blocked_signals);
+    for (auto sig : sigs) {
+        if (auto const result = sigaddset(&blocked_signals, sig); result < 0)
+            throw std::system_error { errno, std::system_category() };
+    }
+    if (auto const result =
+            pthread_sigmask(SIG_SETMASK, &blocked_signals, nullptr);
+        result < 0)
+        throw std::system_error { errno, std::system_category() };
+}
+
+template <typename F>
+auto add_signal_handler(sc::Context& ctx, std::uint32_t sig, F&& handler)
+{
+    ctx.services().use_if<sc::SignalService>()->add_signal_handler(
+        sig, std::forward<F>(handler));
+}
 
 template <typename F>
 auto set_audio_chunk_handler(sc::Context& ctx, F&& handler)
@@ -49,6 +73,7 @@ struct DestroyCaptureSessionGuard
 
 auto run(int argc, char** argv) -> void
 {
+    block_signals({ SIGINT });
     auto const args = sc::parse_cmd_line(argc, argv);
     if (!args.size())
         throw std::runtime_error { "Missing parameter: output file" };
@@ -177,7 +202,12 @@ auto run(int argc, char** argv) -> void
     }
 
     sc::Context ctx;
-    ctx.services().add_from_factory<sc::AudioService>([&] {
+    sc::Context audio_ctx;
+
+    ctx.services().add<sc::SignalService>(sc::SignalService {});
+    add_signal_handler(ctx, SIGINT, [&](std::uint32_t) { ctx.request_stop(); });
+
+    audio_ctx.services().add_from_factory<sc::AudioService>([&] {
         return std::make_unique<sc::AudioService>(
             supported_formats.front(),
             48'000,
@@ -189,7 +219,7 @@ auto run(int argc, char** argv) -> void
             nvcudalib, nvfbc, cuda_ctx.get(), nvfbc_instance.get());
     });
 
-    set_audio_chunk_handler(ctx,
+    set_audio_chunk_handler(audio_ctx,
                             sc::ChunkWriter { format_context.get(),
                                               audio_encoder_context.get(),
                                               stream.get() });
@@ -198,14 +228,22 @@ auto run(int argc, char** argv) -> void
                                                    video_encoder_context.get(),
                                                    video_stream.get() });
 
-    set_stream_end_handler(ctx,
+    set_stream_end_handler(audio_ctx,
                            sc::StreamFinalizer { format_context.get(),
                                                  audio_encoder_context.get(),
                                                  video_encoder_context.get(),
                                                  stream.get(),
                                                  video_stream.get() });
 
+    auto audio_thread = std::thread([&] { audio_ctx.run(); });
     ctx.run();
+    audio_ctx.request_stop();
+    audio_thread.join();
+
+    std::cerr << "Finalizing output...\n";
+    if (auto const ret = av_write_trailer(format_context.get()); ret < 0)
+        throw std::runtime_error { "Failed to write trailer: " +
+                                   sc::av_error_to_string(ret) };
 }
 
 auto main(int argc, char** argv) -> int

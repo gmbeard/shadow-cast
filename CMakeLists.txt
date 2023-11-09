@@ -48,9 +48,20 @@ option(
     OFF
 )
 
+option(
+    SHADOW_CAST_ENABLE_TSAN
+    "Enable TSan for ${PROJECT_NAME}"
+    OFF
+)
+
 if (SHADOW_CAST_ENABLE_ASAN)
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)
+endif()
+
+if (SHADOW_CAST_ENABLE_TSAN)
+    add_compile_options(-fsanitize=thread)
+    add_link_options(-fsanitize=thread)
 endif()
 
 add_subdirectory(src)
