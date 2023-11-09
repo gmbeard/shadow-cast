@@ -1,3 +1,9 @@
+## 0.3.0
+### MINOR Changes:
+- Disables NvFBC push model by default to prevent some capture artifacts
+- Performance improvement to audio capture by using a memory pool to reduce allocations
+- Adds multi-threaded encoding
+
 ## 0.2.0
 ### MINOR Changes:
 - Fixes some timing issues that were causing audio / video desync.
