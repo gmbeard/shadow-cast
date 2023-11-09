@@ -35,9 +35,5 @@ auto StreamFinalizer::operator()() const -> void
                    video_codec_context_.get(),
                    format_context_.get(),
                    video_stream_.get());
-
-    if (auto const ret = av_write_trailer(format_context_.get()); ret < 0)
-        throw std::runtime_error { "Failed to write trailer: " +
-                                   sc::av_error_to_string(ret) };
 }
 } // namespace sc
