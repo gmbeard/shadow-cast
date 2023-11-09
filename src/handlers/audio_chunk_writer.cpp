@@ -31,13 +31,10 @@ auto send_frame(AVFrame* frame,
     PacketPtr packet { av_packet_alloc(),
                        [](auto pkt) { av_packet_free(&pkt); } };
 
-    auto response = invoke_synchronized(
-        send_frame_mutex, [&] { return avcodec_send_frame(ctx, frame); });
+    auto response = avcodec_send_frame(ctx, frame);
 
     while (response >= 0) {
-        response = invoke_synchronized(send_frame_mutex, [&] {
-            return avcodec_receive_packet(ctx, packet.get());
-        });
+        response = avcodec_receive_packet(ctx, packet.get());
         if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
             break;
         }
