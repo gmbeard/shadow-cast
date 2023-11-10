@@ -2,7 +2,7 @@
 #include "av/buffer.hpp"
 #include "error.hpp"
 #include "nvidia.hpp"
-
+#include <X11/Xlib.h>
 extern "C" {
 #include <libavutil/hwcontext_cuda.h>
 }
@@ -16,7 +16,8 @@ auto CodecContextDeleter::operator()(AVCodecContext* ptr) noexcept -> void
 
 auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
-                          AVBufferPool* pool) -> sc::CodecContextPtr
+                          AVBufferPool* pool,
+                          Display* display) -> sc::CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec> video_encoder { avcodec_find_encoder_by_name(
         encoder_name.c_str()) };
@@ -37,8 +38,10 @@ auto create_video_encoder(std::string const& encoder_name,
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
     video_encoder_context->bit_rate = 100'000;
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    video_encoder_context->width = 2560;
-    video_encoder_context->height = 1440;
+    video_encoder_context->width =
+        XWidthOfScreen(DefaultScreenOfDisplay(display));
+    video_encoder_context->height =
+        XHeightOfScreen(DefaultScreenOfDisplay(display));
 
     sc::BufferPtr device_ctx { av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA) };
     if (!device_ctx) {

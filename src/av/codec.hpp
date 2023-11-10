@@ -2,6 +2,7 @@
 #define SHADOW_CAST_AV_CODEC_HPP_INCLUDED
 
 #include "av/fwd.hpp"
+#include "display/display.hpp"
 #include "nvidia.hpp"
 #include <memory>
 #include <string>
@@ -16,7 +17,8 @@ struct CodecContextDeleter
 using CodecContextPtr = std::unique_ptr<AVCodecContext, CodecContextDeleter>;
 auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
-                          AVBufferPool* pool) -> sc::CodecContextPtr;
+                          AVBufferPool* pool,
+                          Display* display) -> sc::CodecContextPtr;
 } // namespace sc
 
 #endif // SHADOW_CAST_AV_CODEC_HPP_INCLUDED

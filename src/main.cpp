@@ -78,6 +78,8 @@ auto run(int argc, char** argv) -> void
     if (!args.size())
         throw std::runtime_error { "Missing parameter: output file" };
 
+    auto const display = sc::get_display();
+
     /* CUDA and NvFBC...
      */
     auto nvcudalib = sc::load_cuda();
@@ -164,7 +166,7 @@ auto run(int argc, char** argv) -> void
         throw sc::CodecError { "Failed to allocate video buffer pool" };
 
     auto video_encoder_context = sc::create_video_encoder(
-        kVideoEncoderName, cuda_ctx.get(), buffer_pool.get());
+        kVideoEncoderName, cuda_ctx.get(), buffer_pool.get(), display.get());
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
         format_context.get(), video_encoder_context->codec) };

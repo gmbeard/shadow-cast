@@ -1,0 +1,6 @@
+#ifndef SHADOW_CAST_DISPLAY_HPP_INCLUDED
+#define SHADOW_CAST_DISPLAY_HPP_INCLUDED
+
+#include "./display/display.hpp"
+
+#endif // SHADOW_CAST_DISPLAY_HPP_INCLUDED

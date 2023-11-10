@@ -13,6 +13,8 @@ add_library(shadow-cast-obj
     av/media_chunk.cpp
     av/sample_format.cpp
 
+    display/display.cpp
+
 	handlers/stream_finalizer.cpp
     handlers/audio_chunk_writer.cpp
     handlers/video_frame_writer.cpp
@@ -53,6 +55,7 @@ target_link_libraries(shadow-cast-obj
     FFMpeg::swresample
     FFMpeg::swscale
     pthread
+    X11::X11
 )
 
 add_executable(shadow-cast
