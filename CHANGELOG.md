@@ -1,3 +1,8 @@
+## 0.4.0
+### MINOR Changes:
+- Removes unnecessary thread synchronization to reduce contention
+- Reads the screen resolution from the default X display
+
 ## 0.3.0
 ### MINOR Changes:
 - Disables NvFBC push model by default to prevent some capture artifacts
