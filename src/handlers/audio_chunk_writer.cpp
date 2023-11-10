@@ -1,60 +1,14 @@
 #include "handlers/audio_chunk_writer.hpp"
+#include "av/frame.hpp"
 #include "av/sample_format.hpp"
 #include "error.hpp"
 #include <algorithm>
 #include <cassert>
 #include <memory>
-#include <mutex>
 #include <numeric>
-
-std::mutex send_frame_mutex {};
-
-namespace
-{
-template <typename F>
-auto invoke_synchronized(std::mutex& mutex, F&& f)
-{
-    std::lock_guard lock { mutex };
-    return std::forward<F>(f)();
-}
-
-} // namespace
 
 namespace sc
 {
-auto send_frame(AVFrame* frame,
-                AVCodecContext* ctx,
-                AVFormatContext* fmt,
-                AVStream* stream) -> void
-{
-    using PacketPtr = std::unique_ptr<AVPacket, auto(*)(AVPacket*)->void>;
-    PacketPtr packet { av_packet_alloc(),
-                       [](auto pkt) { av_packet_free(&pkt); } };
-
-    auto response = avcodec_send_frame(ctx, frame);
-
-    while (response >= 0) {
-        response = avcodec_receive_packet(ctx, packet.get());
-        if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
-            break;
-        }
-
-        if (response < 0) {
-            throw std::runtime_error { "receive packet error" };
-        }
-
-        packet->stream_index = stream->index;
-        av_packet_rescale_ts(packet.get(), ctx->time_base, stream->time_base);
-
-        response = invoke_synchronized(send_frame_mutex, [&] {
-            return av_interleaved_write_frame(fmt, packet.get());
-        });
-        if (response < 0) {
-            throw std::runtime_error { "write packet error: " +
-                                       av_error_to_string(response) };
-        }
-    }
-}
 
 ChunkWriter::ChunkWriter(AVFormatContext* format_context,
                          AVCodecContext* codec_context,
@@ -64,6 +18,7 @@ ChunkWriter::ChunkWriter(AVFormatContext* format_context,
     , stream_ { stream }
     , frame_ { av_frame_alloc() }
     , total_samples_written_ { 0 }
+    , packet_ { av_packet_alloc() }
 {
 }
 
@@ -107,7 +62,8 @@ auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
     send_frame(frame.get(),
                codec_context_.get(),
                format_context_.get(),
-               stream_.get());
+               stream_.get(),
+               packet_.get());
 }
 
 } // namespace sc

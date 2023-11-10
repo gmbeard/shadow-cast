@@ -11,6 +11,7 @@ add_library(shadow-cast-obj
     av/format.cpp
     av/frame.cpp
     av/media_chunk.cpp
+    av/packet.cpp
     av/sample_format.cpp
 
     display/display.cpp

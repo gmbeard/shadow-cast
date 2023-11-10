@@ -15,11 +15,12 @@ struct VideoFrameWriter
     auto operator()(CUdeviceptr cu_device_ptr, NVFBC_FRAME_GRAB_INFO) -> void;
 
 private:
-    sc::BorrowedPtr<AVFormatContext> format_context_;
-    sc::BorrowedPtr<AVCodecContext> codec_context_;
-    sc::BorrowedPtr<AVStream> stream_;
-    sc::FramePtr frame_;
+    BorrowedPtr<AVFormatContext> format_context_;
+    BorrowedPtr<AVCodecContext> codec_context_;
+    BorrowedPtr<AVStream> stream_;
+    FramePtr frame_;
     std::size_t frame_number_ { 0 };
+    PacketPtr packet_;
 };
 
 } // namespace sc

@@ -1,6 +1,6 @@
 #include "handlers/stream_finalizer.hpp"
+#include "av/frame.hpp"
 #include "error.hpp"
-#include "handlers/audio_chunk_writer.hpp"
 #include <stdexcept>
 
 namespace sc
@@ -17,6 +17,7 @@ StreamFinalizer::StreamFinalizer(
     , video_codec_context_ { video_codec_context }
     , audio_stream_ { audio_stream }
     , video_stream_ { video_stream }
+    , packet_ { av_packet_alloc() }
 {
 }
 
@@ -24,16 +25,18 @@ auto StreamFinalizer::operator()() const -> void
 {
     /* Send a end marker to the audio stream...
      */
-    sc::send_frame(nullptr,
-                   audio_codec_context_.get(),
-                   format_context_.get(),
-                   audio_stream_.get());
+    send_frame(nullptr,
+               audio_codec_context_.get(),
+               format_context_.get(),
+               audio_stream_.get(),
+               packet_.get());
 
     /* Hijack this handler to send an end marker to the video stream, too...
      */
-    sc::send_frame(nullptr,
-                   video_codec_context_.get(),
-                   format_context_.get(),
-                   video_stream_.get());
+    send_frame(nullptr,
+               video_codec_context_.get(),
+               format_context_.get(),
+               video_stream_.get(),
+               packet_.get());
 }
 } // namespace sc

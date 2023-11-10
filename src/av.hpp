@@ -8,6 +8,7 @@
 #include "./av/frame.hpp"
 #include "./av/fwd.hpp"
 #include "./av/media_chunk.hpp"
+#include "./av/packet.hpp"
 #include "./av/sample_format.hpp"
 
 #endif // SHADOW_CAST_AV_HPP_INCLUDED

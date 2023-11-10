@@ -1,0 +1,1 @@
+Removes excess `AVPacket` allocations

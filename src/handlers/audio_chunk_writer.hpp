@@ -21,12 +21,8 @@ private:
     BorrowedPtr<AVStream> stream_;
     FramePtr frame_;
     std::size_t total_samples_written_ { 0 };
+    PacketPtr packet_;
 };
-
-auto send_frame(AVFrame* frame,
-                AVCodecContext* ctx,
-                AVFormatContext* fmt,
-                AVStream* stream) -> void;
 
 } // namespace sc
 
