@@ -39,7 +39,7 @@ After obtaining the source, change to the project's directory and run the follow
 ```
 $ mkdir ./build
 $ cd ./build
-$ cmake -DCMAKE_BUILD_TYPE=Release ..
+$ cmake ..
 $ cmake --build .
 ```
 

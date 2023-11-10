@@ -2,6 +2,7 @@
 #define SHADOW_CAST_HPP_INCLUDED
 
 #include "./av.hpp"
+#include "./display.hpp"
 #include "./error.hpp"
 #include "./handlers.hpp"
 #include "./nvidia.hpp"
