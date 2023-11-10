@@ -2,6 +2,7 @@
 #define SHADOW_CAST_HANDLERS_STREAM_FINALIZER_HPP_INCLUDED
 
 #include "av/fwd.hpp"
+#include "av/packet.hpp"
 #include "utils/borrowed_ptr.hpp"
 
 namespace sc
@@ -23,6 +24,7 @@ private:
     BorrowedPtr<AVCodecContext> video_codec_context_;
     BorrowedPtr<AVStream> audio_stream_;
     BorrowedPtr<AVStream> video_stream_;
+    PacketPtr packet_;
 };
 
 } // namespace sc

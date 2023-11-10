@@ -20,6 +20,12 @@ struct AVFrameUnrefGuard
     sc::BorrowedPtr<AVFrame> frame;
 };
 
+auto send_frame(AVFrame* frame,
+                AVCodecContext* ctx,
+                AVFormatContext* fmt,
+                AVStream* stream,
+                AVPacket* packet) -> void;
+
 } // namespace sc
 
 #endif // SHADOW_CAST_AV_FRAME_HPP_INCLUDED
