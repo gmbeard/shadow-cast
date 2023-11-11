@@ -1,3 +1,9 @@
+## 0.5.0
+### MINOR Changes:
+- Removes excess `AVPacket` allocations
+- Adds command line options
+- Allows video/audio codecs, audio sample rate, and video frame rate to be specified on cmdline
+
 ## 0.4.0
 ### MINOR Changes:
 - Removes unnecessary thread synchronization to reduce contention
