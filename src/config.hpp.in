@@ -10,7 +10,9 @@ enum struct ByteOrder
 };
 
 // clang-format off
-auto constexpr kByteOrder = ByteOrder::@SHADOW_CAST_BYTE_ORDER@;
+[[maybe_unused]] auto constexpr kByteOrder = ByteOrder::@SHADOW_CAST_BYTE_ORDER@;
+[[maybe_unused]] auto constexpr kShadowCastProg = "@PROJECT_NAME@";
+[[maybe_unused]] auto constexpr kShadowCastVersion = "@PROJECT_VERSION@";
 // clang-format on
 } // namespace sc
 

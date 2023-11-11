@@ -9,7 +9,7 @@ namespace sc
 
 struct Context
 {
-    Context() noexcept = default;
+    explicit Context(std::uint32_t = 60) noexcept;
     Context(Context const&) = delete;
     auto operator=(Context const&) -> Context& = delete;
 
@@ -20,6 +20,7 @@ struct Context
 private:
     std::atomic<bool> stop_requested_ { false };
     ServiceRegistry reg_;
+    std::uint32_t fps_;
 };
 
 } // namespace sc

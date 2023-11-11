@@ -17,7 +17,8 @@ auto CodecContextDeleter::operator()(AVCodecContext* ptr) noexcept -> void
 auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
-                          Display* display) -> sc::CodecContextPtr
+                          Display* display,
+                          std::uint32_t fps) -> sc::CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec> video_encoder { avcodec_find_encoder_by_name(
         encoder_name.c_str()) };
@@ -29,8 +30,8 @@ auto create_video_encoder(std::string const& encoder_name,
         video_encoder.get()) };
     video_encoder_context->codec_id = video_encoder->id;
     video_encoder_context->time_base.num = 1;
-    video_encoder_context->time_base.den = 60; // TODO: Ensure this is settable
-    video_encoder_context->framerate.num = 60;
+    video_encoder_context->time_base.den = fps;
+    video_encoder_context->framerate.num = fps;
     video_encoder_context->framerate.den = 1;
     video_encoder_context->sample_aspect_ratio.num = 0;
     video_encoder_context->sample_aspect_ratio.den = 0;

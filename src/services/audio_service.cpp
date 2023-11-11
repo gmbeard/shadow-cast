@@ -179,7 +179,7 @@ constexpr pw_stream_events stream_events = { .version =
                                              .trigger_done = nullptr };
 auto start_pipewire(sc::AudioLoopData& data)
 {
-    std::array<spa_pod const*, 1> params {};
+    std::array<spa_pod const*, 2> params {};
     uint8_t buffer[1024];
     struct pw_properties* props;
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
@@ -223,6 +223,7 @@ auto start_pipewire(sc::AudioLoopData& data)
      * graph rate and channels. */
     spa_audio_info_raw raw_init = {};
     raw_init.format = convert_to_pipewire_format(data.required_sample_format);
+    raw_init.rate = data.required_sample_rate;
     params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &raw_init);
 
     /* Now connect this stream.

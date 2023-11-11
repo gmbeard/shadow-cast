@@ -18,7 +18,8 @@ using CodecContextPtr = std::unique_ptr<AVCodecContext, CodecContextDeleter>;
 auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
-                          Display* display) -> sc::CodecContextPtr;
+                          Display* display,
+                          std::uint32_t fps) -> sc::CodecContextPtr;
 } // namespace sc
 
 #endif // SHADOW_CAST_AV_CODEC_HPP_INCLUDED

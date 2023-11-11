@@ -16,7 +16,7 @@
     while (0)
 #define EXPECT_THROWS(expr)                                                    \
     try {                                                                      \
-        expr;                                                                  \
+        static_cast<void>(expr);                                               \
         throw ::testing::TestFailure("Expectation not met: " STRINGIFY(expr) " should throw\n in " __FILE__ ":" STRINGIFY(__LINE__));     \
     }                                                                          \
     catch (::testing::TestFailure const&) {                                    \

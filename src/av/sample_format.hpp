@@ -4,6 +4,7 @@
 #include "av/fwd.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include <spa/param/audio/format-utils.h>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -183,5 +184,11 @@ auto constexpr convert_to_pipewire_format(SampleFormat fmt) -> spa_audio_format
 auto find_supported_formats(sc::BorrowedPtr<AVCodec const> codec)
     -> std::vector<SampleFormat>;
 
+auto find_supported_sample_rates(sc::BorrowedPtr<AVCodec const> codec) noexcept
+    -> std::span<int const>;
+
+auto is_sample_rate_supported(std::uint32_t requested,
+                              sc::BorrowedPtr<AVCodec const> codec) noexcept
+    -> bool;
 } // namespace sc
 #endif // SHADOW_CAST_AV_SAMPLE_FORMAT_HPP_INCLUDED
