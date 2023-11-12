@@ -54,7 +54,7 @@ struct AudioService final : Service
 
 protected:
     auto on_init(ReadinessRegister) -> void override;
-    auto on_uninit() -> void override;
+    auto on_uninit() noexcept -> void override;
 
 public:
     template <typename F>

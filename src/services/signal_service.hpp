@@ -42,7 +42,7 @@ struct SignalService final : Service
 
 protected:
     auto on_init(ReadinessRegister) -> void override;
-    auto on_uninit() -> void override;
+    auto on_uninit() noexcept -> void override;
 
 private:
     sigset_t original_mask_;

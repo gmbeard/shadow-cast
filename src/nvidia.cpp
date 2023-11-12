@@ -1,22 +1,8 @@
-#include "./nvidia.hpp"
-#include "./nvidia/cuda.hpp"
-#include "./utils/base64.hpp"
+#include "nvidia.hpp"
+#include "nvidia/cuda.hpp"
+#include "utils/base64.hpp"
+#include "utils/symbol.hpp"
 #include <dlfcn.h>
-#include <iostream>
-
-#define TRY_ATTACH_SYMBOL(target, name, lib) attach_symbol(target, name, lib)
-
-namespace
-{
-template <typename F>
-auto attach_symbol(F** fn, char const* name, void* lib) -> void
-{
-    *fn = reinterpret_cast<F*>(dlsym(lib, name));
-    if (!*fn)
-        throw sc::ModuleError { std::string { "Couldn't load symbol: " } +
-                                name };
-}
-} // namespace
 
 namespace sc
 {
@@ -86,7 +72,7 @@ auto load_cuda() -> NvCuda
     TRY_ATTACH_SYMBOL(&cuda.cuMemsetD8_v2, "cuMemsetD8_v2", lib);
     TRY_ATTACH_SYMBOL(&cuda.cuMemcpy2D_v2, "cuMemcpy2D_v2", lib);
     TRY_ATTACH_SYMBOL(
-        &cuda.cuGraphicsGLRegisterImage, "cuGraphicsGLRegisterImage", lib);
+        &cuda.cuGraphicsEGLRegisterImage, "cuGraphicsEGLRegisterImage", lib);
     TRY_ATTACH_SYMBOL(&cuda.cuGraphicsResourceSetMapFlags,
                       "cuGraphicsResourceSetMapFlags",
                       lib);
@@ -100,6 +86,8 @@ auto load_cuda() -> NvCuda
     TRY_ATTACH_SYMBOL(&cuda.cuGraphicsSubResourceGetMappedArray,
                       "cuGraphicsSubResourceGetMappedArray",
                       lib);
+    TRY_ATTACH_SYMBOL(
+        &cuda.cuArrayGetDescriptor_v2, "cuArrayGetDescriptor_v2", lib);
     return cuda;
 }
 
@@ -174,8 +162,7 @@ auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
 
     NVFBC_TOCUDA_SETUP_PARAMS setup_params {};
     setup_params.dwVersion = NVFBC_TOCUDA_SETUP_PARAMS_VER;
-    setup_params.eBufferFormat =
-        NVFBC_BUFFER_FORMAT_YUV444P; // NVFBC_BUFFER_FORMAT_BGRA;
+    setup_params.eBufferFormat = NVFBC_BUFFER_FORMAT_YUV444P;
 
     if (nvfbc.nvFBCToCudaSetUp(nvfbc_handle, &setup_params) != NVFBC_SUCCESS)
         throw sc::NvFBCError { nvfbc, nvfbc_handle };

@@ -286,7 +286,7 @@ auto AudioService::on_init(ReadinessRegister reg) -> void
     start_pipewire(loop_data_);
 }
 
-auto AudioService::on_uninit() -> void
+auto AudioService::on_uninit() noexcept -> void
 {
     stop_pipewire(loop_data_);
 

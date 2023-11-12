@@ -5,7 +5,6 @@
 #include <cassert>
 #include <cstddef>
 #include <errno.h>
-#include <iostream>
 #include <limits>
 #include <poll.h>
 #include <signal.h>

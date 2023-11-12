@@ -6,10 +6,9 @@
 #include "./utils.hpp"
 #include "error.hpp"
 #include <array>
-#include <iostream>
+#include <cinttypes>
 #include <memory>
 #include <stdexcept>
-#include <cinttypes>
 
 namespace sc
 {

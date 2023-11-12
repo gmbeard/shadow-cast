@@ -1,0 +1,20 @@
+#!/bin/sh
+
+install_prefix="@CMAKE_INSTALL_PREFIX@"
+project_dir="@PROJECT_SOURCE_DIR@"
+build_dir="@PROJECT_BINARY_DIR@"
+kms_bin_name="@SHADOW_CAST_KMS_BINARY_NAME@"
+
+printf \
+    "%s\n%s\n" \
+    "${install_prefix}" \
+    "${project_dir}"
+
+cmake \
+    --build "${build_dir}" \
+    --target install \
+    -- -j$(nproc)
+
+setcap \
+    cap_sys_admin+ep \
+    "${install_prefix}/bin/${kms_bin_name}"

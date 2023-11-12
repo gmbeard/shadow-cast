@@ -16,12 +16,25 @@ add_library(shadow-cast-obj
 
     display/display.cpp
 
-	handlers/stream_finalizer.cpp
+    drm/messaging.cpp
+    drm/planes.cpp
+
     handlers/audio_chunk_writer.cpp
+    handlers/drm_video_frame_writer.cpp
+	handlers/stream_finalizer.cpp
     handlers/video_frame_writer.cpp
+
+    io/accept_handler.cpp
+    io/process.cpp
+    io/signals.cpp
+    io/unix_socket.cpp
+
+    platform/egl.cpp
+    platform/wayland.cpp
 
     services/audio_service.cpp
     services/context.cpp
+    services/drm_video_service.cpp
     services/readiness.cpp
     services/service.cpp
     services/service_registry.cpp
@@ -29,6 +42,7 @@ add_library(shadow-cast-obj
     services/video_service.cpp
 
     utils/cmd_line.cpp
+    utils/contracts.cpp
     utils/base64.cpp
     utils/elapsed.cpp
     utils/result.cpp
@@ -57,6 +71,8 @@ target_link_libraries(shadow-cast-obj
     FFMpeg::swscale
     pthread
     X11::X11
+    wayland-client
+    wayland-egl
 )
 
 add_executable(shadow-cast
@@ -66,4 +82,26 @@ add_executable(shadow-cast
 target_link_libraries(shadow-cast
     PRIVATE
     shadow-cast-obj
+)
+
+set(
+    SHADOW_CAST_KMS_BINARY_NAME
+    "shadow-cast-kms"
+    PARENT_SCOPE
+)
+
+add_executable(shadow-cast-kms
+    kms.cpp
+)
+
+set_target_properties(
+    shadow-cast-kms
+    PROPERTIES
+        OUTPUT_NAME "${SHADOW_CAST_KMS_BINARY_NAME}"
+)
+
+target_link_libraries(shadow-cast-kms
+    PRIVATE
+    shadow-cast-obj
+    DRM::drm
 )

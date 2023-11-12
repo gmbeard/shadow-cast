@@ -14,12 +14,19 @@ struct CodecContextDeleter
     auto operator()(AVCodecContext* ptr) noexcept -> void;
 };
 
+struct VideoOutputSize
+{
+    std::uint32_t width;
+    std::uint32_t height;
+};
+
 using CodecContextPtr = std::unique_ptr<AVCodecContext, CodecContextDeleter>;
 auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
-                          Display* display,
-                          std::uint32_t fps) -> sc::CodecContextPtr;
+                          VideoOutputSize size,
+                          std::uint32_t fps,
+                          AVPixelFormat pixel_format) -> sc::CodecContextPtr;
 } // namespace sc
 
 #endif // SHADOW_CAST_AV_CODEC_HPP_INCLUDED

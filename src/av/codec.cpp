@@ -17,8 +17,9 @@ auto CodecContextDeleter::operator()(AVCodecContext* ptr) noexcept -> void
 auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
-                          Display* display,
-                          std::uint32_t fps) -> sc::CodecContextPtr
+                          VideoOutputSize size,
+                          std::uint32_t fps,
+                          AVPixelFormat pixel_format) -> sc::CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec> video_encoder { avcodec_find_encoder_by_name(
         encoder_name.c_str()) };
@@ -39,10 +40,8 @@ auto create_video_encoder(std::string const& encoder_name,
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
     video_encoder_context->bit_rate = 100'000;
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    video_encoder_context->width =
-        XWidthOfScreen(DefaultScreenOfDisplay(display));
-    video_encoder_context->height =
-        XHeightOfScreen(DefaultScreenOfDisplay(display));
+    video_encoder_context->width = size.width;
+    video_encoder_context->height = size.height;
 
     sc::BufferPtr device_ctx { av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA) };
     if (!device_ctx) {
@@ -68,7 +67,7 @@ auto create_video_encoder(std::string const& encoder_name,
         reinterpret_cast<AVHWFramesContext*>(frame_context->data);
     hw_frame_context->width = video_encoder_context->width;
     hw_frame_context->height = video_encoder_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_YUV444P;
+    hw_frame_context->sw_format = pixel_format;
     hw_frame_context->format = video_encoder_context->pix_fmt;
     hw_frame_context->device_ref = av_buffer_ref(device_ctx.get());
     hw_frame_context->device_ctx =
