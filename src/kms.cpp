@@ -237,7 +237,7 @@ auto get_fb(int drm_fd) -> OutgoingMessage
     OutgoingMessage msg {};
 
     for (auto i = 0u;
-         i < resources->count_planes && i < sc::kMaxPlaneDescriptors;
+         i < resources->count_planes && msg.num_fds < sc::kMaxPlaneDescriptors;
          ++i) {
         auto const plane = drmModeGetPlane(drm_fd, resources->planes[i]);
         SC_SCOPE_GUARD([&] {
@@ -279,13 +279,14 @@ auto get_fb(int drm_fd) -> OutgoingMessage
             }
         });
 
-        msg.descriptors[i].fd = fb_fd;
-        msg.descriptors[i].width = fb->width;
-        msg.descriptors[i].height = fb->height;
-        msg.descriptors[i].pitch = fb->pitches[0];
-        msg.descriptors[i].offset = fb->offsets[0];
-        msg.descriptors[i].pixel_format = fb->pixel_format;
-        msg.descriptors[i].modifier = fb->modifier;
+        auto const descriptor_index = msg.num_fds;
+        msg.descriptors[descriptor_index].fd = fb_fd;
+        msg.descriptors[descriptor_index].width = fb->width;
+        msg.descriptors[descriptor_index].height = fb->height;
+        msg.descriptors[descriptor_index].pitch = fb->pitches[0];
+        msg.descriptors[descriptor_index].offset = fb->offsets[0];
+        msg.descriptors[descriptor_index].pixel_format = fb->pixel_format;
+        msg.descriptors[descriptor_index].modifier = fb->modifier;
 
         log() << "[DRM] Got FB FD: " << fb_fd << '\n';
         log() << "[DRM] FB: " << fb->handles[0] << ' ' << fb->handles[1] << ' '
