@@ -5,7 +5,9 @@
 #include "./display.hpp"
 #include "./error.hpp"
 #include "./handlers.hpp"
+#include "./io.hpp"
 #include "./nvidia.hpp"
+#include "./platform.hpp"
 #include "./services.hpp"
 #include "./utils.hpp"
 

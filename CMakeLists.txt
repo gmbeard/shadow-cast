@@ -41,6 +41,7 @@ find_package(
         swscale
 )
 find_package(X11 REQUIRED)
+find_package(DRM REQUIRED)
 
 option(
     SHADOW_CAST_ENABLE_TESTS
@@ -77,7 +78,17 @@ if(SHADOW_CAST_ENABLE_TESTS)
     add_subdirectory(tests)
 endif()
 
+configure_file(
+    tools/install-helper.sh.in
+    install-helper.sh
+    FILE_PERMISSIONS
+        OWNER_READ OWNER_WRITE OWNER_EXECUTE
+        GROUP_READ GROUP_WRITE
+        WORLD_READ WORLD_WRITE
+    @ONLY
+)
+
 install(
-    TARGETS shadow-cast
+    TARGETS shadow-cast shadow-cast-kms
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

@@ -16,11 +16,11 @@ struct Service
 {
     virtual ~Service();
     auto init(ReadinessRegister) -> void;
-    auto uninit() -> void;
+    auto uninit() noexcept -> void;
 
 protected:
     virtual auto on_init(ReadinessRegister) -> void = 0;
-    virtual auto on_uninit() -> void;
+    virtual auto on_uninit() noexcept -> void;
 };
 
 } // namespace sc

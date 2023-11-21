@@ -39,7 +39,7 @@ auto SignalService::on_init(ReadinessRegister reg) -> void
     reg(notify_fd_, &dispatch_signal);
 }
 
-auto SignalService::on_uninit() -> void
+auto SignalService::on_uninit() noexcept -> void
 {
     pthread_sigmask(SIG_SETMASK, &original_mask_, nullptr);
 }

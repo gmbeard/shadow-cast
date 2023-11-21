@@ -72,6 +72,30 @@ struct CUDA_MEMCPY2D_st
     size_t Height;       /**< Height of 2D memory copy */
 };
 
+/**
+ * Array formats
+ */
+typedef enum CUarray_format_enum
+{
+    CU_AD_FORMAT_UNSIGNED_INT8 = 0x01,  /**< Unsigned 8-bit integers */
+    CU_AD_FORMAT_UNSIGNED_INT16 = 0x02, /**< Unsigned 16-bit integers */
+    CU_AD_FORMAT_UNSIGNED_INT32 = 0x03, /**< Unsigned 32-bit integers */
+    CU_AD_FORMAT_SIGNED_INT8 = 0x08,    /**< Signed 8-bit integers */
+    CU_AD_FORMAT_SIGNED_INT16 = 0x09,   /**< Signed 16-bit integers */
+    CU_AD_FORMAT_SIGNED_INT32 = 0x0a,   /**< Signed 32-bit integers */
+    CU_AD_FORMAT_HALF = 0x10,           /**< 16-bit floating point */
+    CU_AD_FORMAT_FLOAT = 0x20           /**< 32-bit floating point */
+} CUarray_format;
+
+typedef struct CUDA_ARRAY_DESCRIPTOR_st
+{
+    size_t Width;  /**< Width of array */
+    size_t Height; /**< Height of array */
+
+    CUarray_format Format;    /**< Array format */
+    unsigned int NumChannels; /**< Channels per array element */
+} CUDA_ARRAY_DESCRIPTOR;
+
 using CUDA_MEMCPY2D = CUDA_MEMCPY2D_st;
 using CUgraphicsResource = struct CUgraphicsResource_st*;
 
@@ -94,10 +118,6 @@ struct NvCuda
                               unsigned char uc,
                               std::size_t N);
     CUresult (*cuMemcpy2D_v2)(const CUDA_MEMCPY2D* pCopy);
-    CUresult (*cuGraphicsGLRegisterImage)(CUgraphicsResource* pCudaResource,
-                                          unsigned int image,
-                                          unsigned int target,
-                                          unsigned int flags);
     CUresult (*cuGraphicsEGLRegisterImage)(CUgraphicsResource* pCudaResource,
                                            void* image,
                                            unsigned int flags);
@@ -114,6 +134,8 @@ struct NvCuda
                                                     CUgraphicsResource resource,
                                                     unsigned int arrayIndex,
                                                     unsigned int mipLevel);
+    CUresult (*cuArrayGetDescriptor_v2)(CUDA_ARRAY_DESCRIPTOR* pArrayDescriptor,
+                                        CUarray hArray);
 };
 
 struct NvCudaError : std::runtime_error

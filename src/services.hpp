@@ -3,6 +3,7 @@
 
 #include "./services/audio_service.hpp"
 #include "./services/context.hpp"
+#include "./services/drm_video_service.hpp"
 #include "./services/service.hpp"
 #include "./services/service_registry.hpp"
 #include "./services/signal_service.hpp"

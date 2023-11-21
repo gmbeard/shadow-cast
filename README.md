@@ -36,7 +36,7 @@ Ctrl+C / SIGINT will stop the capture session and finalize the output media.
 ### Help. I'm getting the following error
 
 #### `ERROR: Couldn't create NvFBC instance`
-*Shadow Cast* uses the *NvFBC* facility to provide efficient, low-latency framebuffer capture. By default, NVIDIA disables this on most (if not all) of its consumer-level GPUs. However, there are two ways around this restriction...
+*Shadow Cast* uses the *NvFBC* facility to provide efficient, low-latency framebuffer capture on X11. By default, NVIDIA disables this on most (if not all) of its consumer-level GPUs. However, there are two ways around this restriction...
 
 - You can find a utility to patch your NVIDIA drivers in the [keylase/nvidia-patch](https://github.com/keylase/nvidia-patch) GitHub repo.
 - You can obtain a "key" to unlock this feature at runtime. The key can be set at runtime via the `SHADOW_CAST_NVFBC_KEY=<BASE64 ENCODED KEY>` environment variable. I use this method but I'm not sure how "official" it is, so no keys are provided in this repo. Feel free to message me about this.
@@ -45,14 +45,16 @@ Ctrl+C / SIGINT will stop the capture session and finalize the output media.
 - FFMpeg (libav)
 - NVIDIA GPU, supporting NVENC and NvFBC
 - Pipewire
-- X11
+- X11 or Wayland
 
 ### Building from source
-In order to build *Shadow Cast* you will need the following libraries' headers/libs installed...
+In order to build *Shadow Cast* you will need a C++20 compiler, plus the following libraries' headers/libs installed...
 
 - ffmpeg / libav
 - X11
 - Pipewire
+- Wayland (wayland-client, wayland-egl)
+- libdrm
 
 These can usually be obtained through your Linux distribution's package manager using the `-devel` packages of each.
 
@@ -65,15 +67,27 @@ $ cmake ..
 $ cmake --build .
 ```
 
+_TIP: You may be able to speed up the_ `cmake --build .` _step by appending_ ` -- -j$(nproc)`
+
 ### Installing
 
 Following the steps to build, above, you can install the built binary using...
 
 ```
-$ sudo cmake --build . --target install
+$ sudo ./install-helper.sh
 ```
 
-By default, this will install the `shadow-cast` binary to `/usr/local/bin`
+#### Installing to a Different Location
+
+By default, *Shadow Cast* will be installed to `/usr/local/bin`. If you wish to install to a different location, run the following command _before_ running the above install step...
+
+```
+$ cmake -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR> ..
+```
+
+... replacing `<INSTALL_DIR>` with your custom install path (E.g. `$HOME/.local`, `/opt`, etc.)
+
+This will install the binary to `<INSTALL_DIR>/bin/shadow-cast`. Once installed, you must ensure that `<INSTALL_DIR>/bin` is in your `$PATH`.
 
 ### Some Alternative Projects
 #### [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/)
