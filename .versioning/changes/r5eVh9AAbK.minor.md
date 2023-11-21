@@ -1,1 +1,0 @@
-Adds Wayland support

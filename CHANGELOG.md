@@ -1,3 +1,7 @@
+## 0.6.0
+### MINOR Changes:
+- Adds Wayland support
+
 ## 0.5.0
 ### MINOR Changes:
 - Removes excess `AVPacket` allocations
