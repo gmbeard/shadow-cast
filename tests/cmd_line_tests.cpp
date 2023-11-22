@@ -3,9 +3,8 @@
 
 auto should_parse() -> void
 {
-    char const* argv[] = {
-        "-f30", "-A", "libopus", "/tmp/test.mp4", "-h", "-v"
-    };
+    char const* argv[] = { "-V",      "h264_nvenc",    "-f30", "-A",
+                           "libopus", "/tmp/test.mp4", "-h",   "-v" };
 
     auto const cmdline = sc::parse_cmd_line(std::size(argv), argv);
 
@@ -15,9 +14,9 @@ auto should_parse() -> void
     EXPECT(cmdline.get_option_value(sc::CmdLineOption::frame_rate,
                                     sc::number_value) == 30);
 
-    EXPECT(!cmdline.has_option(sc::CmdLineOption::video_encoder));
-    EXPECT(cmdline.get_option_value_or_default(sc::CmdLineOption::video_encoder,
-                                               "hevc_nvenc") == "hevc_nvenc");
+    EXPECT(cmdline.has_option(sc::CmdLineOption::video_encoder));
+    EXPECT(cmdline.get_option_value(sc::CmdLineOption::video_encoder) ==
+           "h264_nvenc");
 
     EXPECT(cmdline.has_option(sc::CmdLineOption::audio_encoder));
     EXPECT(cmdline.get_option_value(sc::CmdLineOption::audio_encoder) ==

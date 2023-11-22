@@ -4,6 +4,7 @@
 #include "error.hpp"
 #include "utils/result.hpp"
 #include <algorithm>
+#include <array>
 #include <cinttypes>
 #include <cstddef>
 #include <string>
@@ -52,7 +53,7 @@ struct NoValidation
 };
 [[maybe_unused]] NoValidation constexpr no_validation {};
 
-using AcceptableValues = std::initializer_list<std::string_view>;
+using AcceptableValues = std::array<std::string_view, 16>;
 using ValidRange = std::tuple<std::int32_t, std::int32_t>;
 using Validation = std::variant<AcceptableValues, ValidRange, NoValidation>;
 
@@ -69,7 +70,7 @@ struct CmdLineOptionSpec
     std::string_view long_name;
     CmdLineOption option;
     std::uint32_t flags;
-    Validation validation;
+    Validation validation {};
     std::string_view description;
 };
 
