@@ -2,6 +2,7 @@
 #define SHADOW_CAST_PLATFORM_WAYLAND_HPP_INCLUDED
 
 #include "./egl.hpp"
+#include <cinttypes>
 #include <memory>
 #include <type_traits>
 #include <wayland-client.h>

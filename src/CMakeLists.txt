@@ -65,7 +65,6 @@ target_link_libraries(shadow-cast-obj
     FFMpeg::avdevice
     FFMpeg::avfilter
     FFMpeg::avformat
-    FFMpeg::avresample
     FFMpeg::avutil
     FFMpeg::swresample
     FFMpeg::swscale

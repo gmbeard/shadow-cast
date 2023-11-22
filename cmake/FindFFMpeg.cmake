@@ -85,7 +85,6 @@ try_find_ffmpeg_targets(
         avdevice
         avfilter
         avformat
-        avresample
         avutil
         swresample
         swscale

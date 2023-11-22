@@ -4,12 +4,10 @@ namespace sc
 {
 
 VideoService::VideoService(
-    NvCuda nvcuda,
     NvFBC nvfbc,
     BorrowedPtr<std::remove_pointer_t<CUcontext>> nvcuda_ctx,
     NVFBC_SESSION_HANDLE nvfbc_session) noexcept
-    : nvcuda_ { nvcuda }
-    , nvfbc_ { nvfbc }
+    : nvfbc_ { nvfbc }
     , nvcuda_ctx_ { nvcuda_ctx }
     , nvfbc_session_ { nvfbc_session }
 {
@@ -29,9 +27,7 @@ auto dispatch_frame(Service& svc) -> void
 
     NVFBC_TOCUDA_GRAB_FRAME_PARAMS grab_params {};
     grab_params.dwVersion = NVFBC_TOCUDA_GRAB_FRAME_PARAMS_VER;
-    grab_params.dwFlags =
-        NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT; /* |
-                                           NVFBC_TOCUDA_GRAB_FLAGS_FORCE_REFRESH;*/
+    grab_params.dwFlags = NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT;
     grab_params.pFrameGrabInfo = &frame_info;
     grab_params.pCUDADeviceBuffer = &cu_device_ptr;
     grab_params.dwTimeoutMs = 0;
