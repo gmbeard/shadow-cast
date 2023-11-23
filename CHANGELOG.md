@@ -1,3 +1,8 @@
+## 0.6.2
+### PATCH Changes:
+- Fixes a bug that caused no valid values to be accepted for the `-V` cmdline option (#18)
+- Fixes build incompatibilities with ffmpeg6 - thankyou, @guihkx (#17)
+
 ## 0.6.1
 ### PATCH Changes:
 - Fixes bug where capture would fail with `ERROR: No DRM planes received` on some Wayland compositors ([#12](https://github.com/gmbeard/shadow-cast/issues/12))
