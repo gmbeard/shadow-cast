@@ -14,6 +14,15 @@ using namespace std::literals::string_literals;
 
 namespace
 {
+
+template <typename Container, typename... T>
+constexpr auto construct(T... vals) noexcept -> Container
+requires(sizeof...(T) <= std::tuple_size<Container>::value) &&
+        ((std::is_convertible_v<T, std::string_view>) && ...)
+{
+    return { std::string_view { vals }... };
+}
+
 sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* Audio encoder...
      */
@@ -76,7 +85,8 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .long_name = "--video-encoder",
         .option = sc::CmdLineOption::video_encoder,
         .flags = sc::cmdline::VALUE_REQUIRED,
-        .validation = sc::AcceptableValues { "h264_nvenc", "hevc_nvenc" },
+        .validation =
+            construct<sc::AcceptableValues>("h264_nvenc", "hevc_nvenc"),
         .description = "Video encoder to use. Valid values are 'h264_nvenc', "
                        "'hevc_nvenc'. Default 'hevc_nvenc'",
     },
