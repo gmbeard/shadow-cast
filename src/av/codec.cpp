@@ -21,7 +21,7 @@ auto create_video_encoder(std::string const& encoder_name,
                           std::uint32_t fps,
                           AVPixelFormat pixel_format) -> sc::CodecContextPtr
 {
-    sc::BorrowedPtr<AVCodec> video_encoder { avcodec_find_encoder_by_name(
+    sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
         encoder_name.c_str()) };
     if (!video_encoder) {
         throw CodecError { "Failed to find required video codec" };

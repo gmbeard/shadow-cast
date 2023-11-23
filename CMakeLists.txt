@@ -35,7 +35,6 @@ find_package(
         avdevice
         avfilter
         avformat
-        avresample
         avutil
         swresample
         swscale

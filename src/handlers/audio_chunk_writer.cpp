@@ -1,6 +1,7 @@
 #include "handlers/audio_chunk_writer.hpp"
 #include "av/frame.hpp"
 #include "av/sample_format.hpp"
+#include "config.hpp"
 #include "error.hpp"
 #include <algorithm>
 #include <cassert>
@@ -36,9 +37,12 @@ auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
     frame->nb_samples = chunk.sample_count;
     frame->format = codec_context_->sample_fmt;
     frame->sample_rate = codec_context_->sample_rate;
+#if LIBAVCODEC_VERSION_MAJOR < 60
     frame->channels = interleaved ? 2 : chunk.channel_buffers().size();
-
     frame->channel_layout = AV_CH_LAYOUT_STEREO;
+#else
+    av_channel_layout_copy(&frame->ch_layout, &codec_context_->ch_layout);
+#endif
     frame->pts = total_samples_written_;
     total_samples_written_ += frame->nb_samples;
 

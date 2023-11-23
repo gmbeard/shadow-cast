@@ -16,8 +16,7 @@ struct VideoService final : Service
     using CaptureFrameReceiverType =
         Receiver<void(CUdeviceptr, NVFBC_FRAME_GRAB_INFO)>;
 
-    VideoService(NvCuda,
-                 NvFBC,
+    VideoService(NvFBC,
                  BorrowedPtr<std::remove_pointer_t<CUcontext>>,
                  NVFBC_SESSION_HANDLE) noexcept;
 
@@ -31,7 +30,6 @@ protected:
     auto on_init(ReadinessRegister) -> void override;
 
 private:
-    NvCuda nvcuda_;
     NvFBC nvfbc_;
     BorrowedPtr<std::remove_pointer_t<CUcontext>> nvcuda_ctx_;
     NVFBC_SESSION_HANDLE nvfbc_session_;

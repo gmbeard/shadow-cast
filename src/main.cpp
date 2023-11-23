@@ -3,6 +3,7 @@
 #include <X11/Xlib.h>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <initializer_list>
 #include <iostream>
@@ -10,6 +11,12 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+
+#if FF_API_BUFFER_SIZE_T
+using BufferSize = int;
+#else
+using BufferSize = std::size_t;
+#endif
 
 template <typename F>
 auto add_signal_handler(sc::Context& ctx, std::uint32_t sig, F&& handler)
@@ -85,7 +92,7 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     }
 
     sc::FormatContextPtr format_context { fc_tmp };
-    sc::BorrowedPtr<AVCodec> encoder { avcodec_find_encoder_by_name(
+    sc::BorrowedPtr<AVCodec const> encoder { avcodec_find_encoder_by_name(
         params.audio_encoder.c_str()) };
     if (!encoder) {
         throw sc::CodecError { "Failed to find required audio codec" };
@@ -104,8 +111,12 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     if (!audio_encoder_context)
         throw sc::CodecError { "Failed to allocate audio codec context" };
 
+#if LIBAVCODEC_VERSION_MAJOR < 60
     audio_encoder_context->channels = 2;
     audio_encoder_context->channel_layout = av_get_default_channel_layout(2);
+#else
+    av_channel_layout_default(&audio_encoder_context->ch_layout, 2);
+#endif
     audio_encoder_context->sample_rate = params.sample_rate;
     audio_encoder_context->sample_fmt =
         sc::convert_to_libav_format(supported_formats.front());
@@ -282,7 +293,7 @@ auto run(sc::Parameters const& params) -> void
     }
 
     sc::FormatContextPtr format_context { fc_tmp };
-    sc::BorrowedPtr<AVCodec> encoder { avcodec_find_encoder_by_name(
+    sc::BorrowedPtr<AVCodec const> encoder { avcodec_find_encoder_by_name(
         params.audio_encoder.c_str()) };
     if (!encoder) {
         throw sc::CodecError { "Failed to find required audio codec" };
@@ -301,8 +312,12 @@ auto run(sc::Parameters const& params) -> void
     if (!audio_encoder_context)
         throw sc::CodecError { "Failed to allocate audio codec context" };
 
+#if LIBAVCODEC_VERSION_MAJOR < 60
     audio_encoder_context->channels = 2;
     audio_encoder_context->channel_layout = av_get_default_channel_layout(2);
+#else
+    av_channel_layout_default(&audio_encoder_context->ch_layout, 2);
+#endif
     audio_encoder_context->sample_rate = params.sample_rate;
     audio_encoder_context->sample_fmt =
         sc::convert_to_libav_format(supported_formats.front());
@@ -335,7 +350,8 @@ auto run(sc::Parameters const& params) -> void
     }
 
     sc::BufferPoolPtr buffer_pool { av_buffer_pool_init(
-        1, [](int size) { return av_buffer_alloc(size); }) };
+        1, [](BufferSize size) { return av_buffer_alloc(size); }) };
+
     if (!buffer_pool)
         throw sc::CodecError { "Failed to allocate video buffer pool" };
 
@@ -412,7 +428,7 @@ auto run(sc::Parameters const& params) -> void
 
     ctx.services().add_from_factory<sc::VideoService>([&] {
         return std::make_unique<sc::VideoService>(
-            nvcudalib, nvfbc, cuda_ctx.get(), nvfbc_instance.get());
+            nvfbc, cuda_ctx.get(), nvfbc_instance.get());
     });
 
     set_audio_chunk_handler(audio_ctx,

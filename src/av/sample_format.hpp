@@ -3,6 +3,7 @@
 
 #include "av/fwd.hpp"
 #include "utils/borrowed_ptr.hpp"
+#include <cinttypes>
 #include <spa/param/audio/format-utils.h>
 #include <span>
 #include <stdexcept>
