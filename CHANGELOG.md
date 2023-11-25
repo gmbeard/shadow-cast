@@ -1,3 +1,7 @@
+## 0.6.3
+### PATCH Changes:
+- Fixes an issue where the build would fail if `cppcheck` executable wasn't available
+
 ## 0.6.2
 ### PATCH Changes:
 - Fixes a bug that caused no valid values to be accepted for the `-V` cmdline option (#18)
