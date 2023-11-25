@@ -4,4 +4,6 @@ if(CMAKE_CXX_CPPCHECK AND CMAKE_BUILD_TYPE STREQUAL "Debug")
         "--enable=warning"
         "--error-exitcode=1"
     )
+else()
+    set(CMAKE_CXX_CPPCHECK "")
 endif()
