@@ -19,6 +19,19 @@ set(CMAKE_CXX_STANDARD 20)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 include(CPPCheck)
 include(GNUInstallDirs)
+include(CheckIPOSupported)
+check_ipo_supported(
+    RESULT SHADOW_CAST_IPO_SUPPORTED
+    OUTPUT SHADOW_CAST_IPO_SUPORTED_OUTPUT
+    LANGUAGES CXX
+)
+
+if (SHADOW_CAST_IPO_SUPPORTED)
+    message(STATUS "IPO supported. Enabling")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+else ()
+    message(STATUS "IPO not supported: ${SHADOW_CAST_IPO_SUPORTED_OUTPUT}")
+endif ()
 
 string(TOLOWER ${CMAKE_CXX_BYTE_ORDER} SHADOW_CAST_BYTE_ORDER)
 
