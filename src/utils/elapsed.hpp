@@ -11,6 +11,7 @@ struct Elapsed
 {
     auto value() const noexcept -> std::uint64_t;
     auto nanosecond_value() const noexcept -> std::uint64_t;
+    auto reset() noexcept -> void;
 
 private:
     std::chrono::time_point<std::chrono::steady_clock> start_ =

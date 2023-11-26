@@ -1,4 +1,5 @@
 #include "services/audio_service.hpp"
+#include "utils/contracts.hpp"
 #include "utils/elapsed.hpp"
 #include <algorithm>
 #include <array>
@@ -42,25 +43,6 @@ auto transfer_chunk_n(sc::MediaChunk& source,
         src_buf.consume(num_bytes);
     }
 }
-
-template <typename List, typename Pool>
-struct ReturnToPoolGuard
-{
-    List& list;
-    Pool& pool;
-
-    ~ReturnToPoolGuard()
-    {
-        auto it = list.begin();
-        while (it != list.end()) {
-            auto item = typename Pool::ItemPtr { &*it, pool };
-            it = list.erase(it);
-        }
-    }
-};
-
-template <typename List, typename Pool>
-ReturnToPoolGuard(List&, Pool&) -> ReturnToPoolGuard<List, Pool>;
 
 } // namespace
 
@@ -258,11 +240,17 @@ namespace sc
 
 AudioService::AudioService(SampleFormat sample_format,
                            std::size_t sample_rate,
-                           std::size_t frame_size)
+                           std::size_t frame_size SC_METRICS_PARAM_DEFINE(
+                               MetricsService*, metrics_service))
     : sample_format_ { sample_format }
     , sample_rate_ { sample_rate }
-    , frame_size_ { frame_size }
+    , frame_size_ { frame_size } // clang-format off
+    SC_METRICS_MEMBER_USE(metrics_service, metrics_service_)
+// clang-format on
 {
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    SC_EXPECT(metrics_service_);
+#endif
 }
 
 AudioService::~AudioService()
@@ -284,6 +272,10 @@ auto AudioService::on_init(ReadinessRegister reg) -> void
     loop_data_.required_sample_format = sample_format_;
     loop_data_.required_sample_rate = sample_rate_;
     start_pipewire(loop_data_);
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    metrics_start_time_ = global_elapsed.nanosecond_value();
+#endif
 }
 
 auto AudioService::on_uninit() noexcept -> void
@@ -297,6 +289,13 @@ auto AudioService::on_uninit() noexcept -> void
 auto dispatch_chunks(sc::Service& svc) -> void
 {
     auto& self = static_cast<AudioService&>(svc);
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    static std::size_t sample_num = 0;
+    self.frame_timer_.reset();
+    auto const frame_timestamp =
+        global_elapsed.nanosecond_value() - self.metrics_start_time_;
+#endif
 
     decltype(self.available_chunks_) tmp_chunks;
     ReturnToPoolGuard return_to_pool_guard { tmp_chunks, self.chunk_pool() };
@@ -316,12 +315,36 @@ auto dispatch_chunks(sc::Service& svc) -> void
                           it);
     }
 
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    std::size_t samples_processed = 0;
+    std::size_t chunk_count = 0;
+#endif
+
     if (auto& listener = self.chunk_listener_; listener) {
         for (auto const& chunk : tmp_chunks) {
-            assert(chunk.sample_count == self.frame_size_);
+            SC_EXPECT(!self.frame_size_ ||
+                      chunk.sample_count == self.frame_size_);
             (*listener)(chunk);
+#ifdef SHADOW_CAST_ENABLE_METRICS
+            samples_processed += chunk.sample_count;
+            chunk_count += 1;
+#endif
         }
     }
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    if (samples_processed) {
+        self.metrics_service_->post_time_metric(
+            { .category = 2,
+              .id = sample_num,
+              .timestamp_ns = frame_timestamp,
+              .nanoseconds = self.frame_timer_.nanosecond_value(),
+              .frame_size = samples_processed,
+              .frame_count = chunk_count });
+
+        sample_num += samples_processed;
+    }
+#endif
 }
 
 auto add_chunk(AudioService& svc,

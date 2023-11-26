@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+exclude_audio=0
+exclude_video=0
+
+while getopts 'sVA' opt; do
+    case "${opt}" in
+        A)
+            exclude_audio=1
+            ;;
+        s)
+            smoothval='smooth csplines'
+            ;;
+        V)
+            exclude_video=1
+            ;;
+        *)
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [[ ${#} -lt 1 ]]; then
+    echo "Incorrect number of arguments. <INPUT_FILE> required" >&2
+    exit 1
+fi
+
+if [[ ${exclude_audio} -ne 0 ]] && [[ ${exclude_audio} == ${exclude_video} ]]; then
+    echo "Cannot use -A and -V together" >&2
+    exit 1
+fi
+
+inputfile="${1}"
+
+set -x
+#
+# See https://raymii.org/s/tutorials/GNUplot_tips_for_nice_looking_charts_from_a_CSV_file.html
+#
+cat <<-EOF | gnuplot -p
+set terminal png size 900,600
+set output '${inputfile}.chart.png'
+set datafile separator ','
+set grid
+set xdata time
+set xlabel "Time (seconds)"
+set ylabel "Frame Time (milliseconds)"
+set xtics 30
+set yrange [0:16]
+
+$([[ ${exclude_audio} -eq 1 ]] && echo "plot '< grep -E \"^1\" "${inputfile}" | cut -d, -f3,4' \
+ using (\$1/1000000000):(\$2/1000000) ${smoothval} with lines title \"Video\"")
+$([[ ${exclude_video} -eq 1 ]] && echo "plot '< grep -E \"^2\" "${inputfile}" | cut -d, -f3,4' \
+ using (\$1/1000000000):(\$2/1000000) ${smoothval} with lines title \"Audio\"")
+$([[ ${exclude_audio} -eq ${exclude_video} ]] && echo "plot '< grep -E \"^1\" "${inputfile}" | cut -d, -f3,4' \
+ using (\$1/1000000000):(\$2/1000000) ${smoothval} with lines title \"Video\", \
+ '< grep -E \"^2\" "${inputfile}" | cut -d, -f3,4' \
+ using (\$1/1000000000):(\$2/1000000) ${smoothval} with lines title \"Audio\"")
+EOF

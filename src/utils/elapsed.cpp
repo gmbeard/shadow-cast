@@ -21,4 +21,9 @@ auto Elapsed::nanosecond_value() const noexcept -> std::uint64_t
     return ch::duration_cast<ch::nanoseconds>(now - start_).count();
 }
 
+auto Elapsed::reset() noexcept -> void
+{
+    start_ = std::chrono::steady_clock::now();
+}
+
 } // namespace sc
