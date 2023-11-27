@@ -1,6 +1,8 @@
 #ifndef SHADOW_CAST_CONFIG_HPP_INCLUDED
 #define SHADOW_CAST_CONFIG_HPP_INCLUDED
 
+#cmakedefine SHADOW_CAST_ENABLE_METRICS
+
 namespace sc
 {
 enum struct ByteOrder
@@ -15,5 +17,23 @@ enum struct ByteOrder
 [[maybe_unused]] auto constexpr kShadowCastVersion = "@PROJECT_VERSION@";
 // clang-format on
 } // namespace sc
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+#define SC_METRICS_MEMBER_DECLARE(type, name) type name
+#define SC_METRICS_MEMBER_USE(param, name)                                     \
+    , name                                                                     \
+    {                                                                          \
+        param                                                                  \
+    }
+#define SC_METRICS_PARAM_DECLARE(type) , type
+#define SC_METRICS_PARAM_DEFINE(type, name) , type name
+#define SC_METRICS_PARAM_USE(val) , val
+#else
+#define SC_METRICS_MEMBER_DECLARE(type, name)
+#define SC_METRICS_MEMBER_USE(param, name)
+#define SC_METRICS_PARAM_DECLARE(type)
+#define SC_METRICS_PARAM_DEFINE(type, name)
+#define SC_METRICS_PARAM_USE(val)
+#endif
 
 #endif // SHADOW_CAST_CONFIG_HPP_INCLUDED

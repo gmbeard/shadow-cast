@@ -1,6 +1,13 @@
 #ifndef SHADOW_CAST_AUDIO_SERVICE_HPP_INCLUDED
 #define SHADOW_CAST_AUDIO_SERVICE_HPP_INCLUDED
 
+#include "config.hpp"
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+#include "services/metrics_service.hpp"
+#include "utils/elapsed.hpp"
+#endif
+
 #include "av/media_chunk.hpp"
 #include "av/sample_format.hpp"
 #include "services/readiness.hpp"
@@ -39,9 +46,10 @@ struct AudioService final : Service
     using ChunkReceiverType = Receiver<void(MediaChunk const&)>;
     using StreamEndReceiverType = Receiver<void()>;
 
-    AudioService(SampleFormat,
-                 std::size_t /*sample_rate*/,
-                 std::size_t /*frame_size*/);
+    AudioService(
+        SampleFormat,
+        std::size_t /*sample_rate*/,
+        std::size_t /*frame_size*/ SC_METRICS_PARAM_DECLARE(MetricsService*));
 
     ~AudioService();
     /* AudioService must have a stable `this` pointer while
@@ -71,7 +79,6 @@ public:
     }
 
 private:
-    std::array<int, 2> pipe_ { -1, -1 };
     std::optional<ChunkReceiverType> chunk_listener_;
     std::optional<StreamEndReceiverType> stream_end_listener_;
     IntrusiveList<MediaChunk> available_chunks_;
@@ -81,6 +88,10 @@ private:
     std::size_t sample_rate_;
     std::size_t frame_size_;
     SynchronizedPool<MediaChunk> chunk_pool_;
+
+    SC_METRICS_MEMBER_DECLARE(MetricsService*, metrics_service_);
+    SC_METRICS_MEMBER_DECLARE(Elapsed, frame_timer_);
+    SC_METRICS_MEMBER_DECLARE(std::size_t, metrics_start_time_);
 };
 
 auto dispatch_chunks(sc::Service&) -> void;

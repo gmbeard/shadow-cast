@@ -35,6 +35,7 @@ add_library(shadow-cast-obj
     services/audio_service.cpp
     services/context.cpp
     services/drm_video_service.cpp
+    services/metrics_service.cpp
     services/readiness.cpp
     services/service.cpp
     services/service_registry.cpp

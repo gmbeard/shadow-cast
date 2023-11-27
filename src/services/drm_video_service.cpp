@@ -3,12 +3,17 @@
 #include "io/accept_handler.hpp"
 #include "io/message_receiver.hpp"
 #include "io/message_sender.hpp"
+#include "utils/contracts.hpp"
 #include "utils/result.hpp"
 #include "utils/scope_guard.hpp"
 #include <algorithm>
 #include <libdrm/drm_fourcc.h>
 #include <system_error>
 #include <vector>
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+#include "utils/elapsed.hpp"
+#endif
 
 namespace
 {
@@ -97,17 +102,24 @@ auto register_egl_image_in_cuda(sc::NvCuda const& nvcuda,
 namespace sc
 {
 
-DRMVideoService::DRMVideoService(NvCuda nvcuda,
-                                 CUcontext cuda_ctx,
-                                 EGL& egl,
-                                 Wayland& wayland,
-                                 WaylandEGL& plaform_egl) noexcept
+DRMVideoService::DRMVideoService(
+    NvCuda nvcuda,
+    CUcontext cuda_ctx,
+    EGL& egl,
+    Wayland& wayland,
+    WaylandEGL& plaform_egl SC_METRICS_PARAM_DEFINE(MetricsService*,
+                                                    metrics_service)) noexcept
     : nvcuda_ { nvcuda }
     , cuda_ctx_ { cuda_ctx }
     , egl_ { &egl }
     , wayland_ { &wayland }
-    , platform_egl_ { &plaform_egl }
+    , platform_egl_ { &plaform_egl } // clang-format off
+    SC_METRICS_MEMBER_USE(metrics_service, metrics_service_)
+// clang-format on
 {
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    SC_EXPECT(metrics_service_);
+#endif
 }
 
 auto DRMVideoService::on_init(ReadinessRegister reg) -> void
@@ -149,6 +161,10 @@ auto DRMVideoService::on_init(ReadinessRegister reg) -> void
     egl_->eglSwapInterval(platform_egl_->egl_display.get(), 0);
 
     reg(FrameTimeRatio(1), &dispatch_frame);
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    metrics_start_time_ = global_elapsed.nanosecond_value();
+#endif
 }
 
 auto DRMVideoService::on_uninit() noexcept -> void
@@ -162,6 +178,13 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
     auto& self = static_cast<DRMVideoService&>(svc);
     if (!self.frame_handler_)
         return;
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    static std::size_t frame_num = 0;
+    self.frame_timer_.reset();
+    auto const frame_timestamp =
+        global_elapsed.nanosecond_value() - self.metrics_start_time_;
+#endif
 
     auto const r =
         get_drm_data(self.drm_socket_, kDRMDataTimeoutMs, &self.drm_proc_mask_);
@@ -244,6 +267,16 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
     });
 
     (*self.frame_handler_)(self.cuda_array_, self.nvcuda_);
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    self.metrics_service_->post_time_metric(
+        { .category = 1,
+          .id = ++frame_num,
+          .timestamp_ns = frame_timestamp,
+          .nanoseconds = self.frame_timer_.nanosecond_value(),
+          .frame_size = 1,
+          .frame_count = 1 });
+#endif
 }
 
 } // namespace sc

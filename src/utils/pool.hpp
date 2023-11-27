@@ -168,6 +168,34 @@ private:
 template <ListItem T, typename Allocator = std::allocator<T>>
 using SynchronizedPool = Pool<T, Allocator, MutexPoolSynchronization>;
 
+template <typename List, typename Pool>
+struct ReturnToPoolGuard
+{
+    List& list;
+    Pool& pool;
+
+    ReturnToPoolGuard(List& l, Pool& p) noexcept
+        : list { l }
+        , pool { p }
+    {
+    }
+
+    ReturnToPoolGuard(ReturnToPoolGuard const&) = delete;
+    auto operator=(ReturnToPoolGuard const&) -> ReturnToPoolGuard& = delete;
+
+    ~ReturnToPoolGuard()
+    {
+        auto it = list.begin();
+        while (it != list.end()) {
+            auto item = typename Pool::ItemPtr { &*it, pool };
+            it = list.erase(it);
+        }
+    }
+};
+
+template <typename List, typename Pool>
+ReturnToPoolGuard(List&, Pool&) -> ReturnToPoolGuard<List, Pool>;
+
 } // namespace sc
 
 #endif // SHADOW_CAST_UTILS_POOL_HPP_INCLUDED

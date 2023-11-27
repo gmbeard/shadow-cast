@@ -1,6 +1,8 @@
 #ifndef SHADOW_CAST_HPP_INCLUDED
 #define SHADOW_CAST_HPP_INCLUDED
 
+#include "config.hpp"
+
 #include "./av.hpp"
 #include "./display.hpp"
 #include "./error.hpp"

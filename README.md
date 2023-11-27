@@ -1,7 +1,7 @@
 ## Shadow Cast - GPU accelerated screen and audio recording
 *Shadow Cast* is a low-latency, low-overhead, GPU accelerated screen &amp; audio capture utility.
 
-Typical screen capture utilities copy the framebuffer data between host and GPU memory when encoding, causing significant load on the host CPU. This can affect both the running applications and the quality of the resulting media. *Shadow Cast* captures and encodes the framebuffer directly on the GPU with very little or no performance penalty to running applications. This makes *Shadow Cast* ideal for capturing gameplay footage, even in the most hardware intensive games.
+Typical screen capture utilities copy the framebuffer data between host and GPU memory when encoding, causing significant load on the host CPU. This can affect both the running applications and the quality of the resulting media. *Shadow Cast* captures and encodes the framebuffer directly on the GPU with very little or no performance penalty to running applications. This makes *Shadow Cast* ideal for capturing gameplay footage, even in the most hardware intensive games. [See how it performs](doc/performance.md).
 
 - [Example](#example---cyberpunk-2077)
 - [Usage](#usage)

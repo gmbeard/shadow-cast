@@ -60,6 +60,12 @@ option(
     OFF
 )
 
+option(
+    SHADOW_CAST_ENABLE_METRICS
+    "Enable metric collection for ${PROJECT_NAME}"
+    OFF
+)
+
 if (SHADOW_CAST_ENABLE_ASAN)
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)
