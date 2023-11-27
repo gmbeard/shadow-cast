@@ -1,6 +1,7 @@
 #include "io/unix_socket.hpp"
 #include "utils/scope_guard.hpp"
 #include <algorithm>
+#include <cstring>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdexcept>
@@ -20,7 +21,7 @@ auto create_socket(std::string_view path, F&& on_create)
 {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0)
-        throw std::runtime_error { "connect(): "s + strerror(errno) };
+        throw std::runtime_error { "connect(): "s + std::strerror(errno) };
 
     auto close_guard = sc::ScopeGuard { [&] { close(fd); } };
 
@@ -68,7 +69,8 @@ auto UnixSocket::accept() -> UnixSocket
     socklen_t len = sizeof(sockaddr_un);
     auto fd = ::accept(fd_, reinterpret_cast<sockaddr*>(&remote_addr), &len);
     if (fd < 0)
-        throw std::runtime_error { "UnixSocket::accept() "s + strerror(errno) };
+        throw std::runtime_error { "UnixSocket::accept() "s +
+                                   std::strerror(errno) };
 
     return UnixSocket { fd };
 }
@@ -76,7 +78,8 @@ auto UnixSocket::accept() -> UnixSocket
 auto UnixSocket::listen() -> void
 {
     if (auto const listen_result = ::listen(fd_, 1); listen_result < 0)
-        throw std::runtime_error { "UnixSocket::listen() "s + strerror(errno) };
+        throw std::runtime_error { "UnixSocket::listen() "s +
+                                   std::strerror(errno) };
 }
 
 auto UnixSocket::fd() const noexcept -> int { return fd_; }
@@ -97,7 +100,7 @@ auto bind(std::string_view path) -> UnixSocket
                                      reinterpret_cast<sockaddr*>(&addr),
                                      sizeof(addr.sun_family) + path.size());
             result < 0)
-            throw std::logic_error { "bind(): "s + strerror(errno) };
+            throw std::logic_error { "bind(): "s + std::strerror(errno) };
 
         return UnixSocket { fd };
     });
@@ -110,7 +113,7 @@ auto connect(std::string_view path) -> UnixSocket
                                         reinterpret_cast<sockaddr*>(&addr),
                                         sizeof(addr.sun_family) + path.size());
             result < 0)
-            throw std::logic_error { "connect(): "s + strerror(errno) };
+            throw std::logic_error { "connect(): "s + std::strerror(errno) };
 
         return UnixSocket { fd };
     });
