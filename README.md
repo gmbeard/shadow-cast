@@ -9,6 +9,7 @@ Typical screen capture utilities copy the framebuffer data between host and GPU 
 - [Building from source](#building-from-source)
 - [Installing](#installing)
 - [Alternative projects](#some-alternative-projects)
+- [FAQ](doc/faq.md)
 
 #### Example - Cyberpunk 2077
 [![Cyberpunk 2077](http://i3.ytimg.com/vi/frXGxrdgTLY/hqdefault.jpg)](https://www.youtube.com/watch?v=frXGxrdgTLY)
@@ -26,20 +27,14 @@ The resulting media/container type is determined by the extension of `<OUTPUT FI
 
 If no `OPTIONS` are specified then *Shadow Cast* will pick some sensible defaults for the audio/video encoders and sample/frame rates, but these can be changed by specifying the following `OPTIONS` on the command line...
 
-- `-A <AUDIO ENCODER>` - All options available to `ffmpeg` should work here. Defaults to `libopus`
-- `-V <VIDEO ENCODER>` - Available options are `h264_nvenc` and `hevc_nvenc`. Defaults to `hevc_nvenc`
-- `-f <FRAME RATE>` - Values from `20` to `60` are accepted. Defaults to `60`
-- `-s <SAMPLE RATE>` - Defaults to `48000` (_NOTE: Some encoders will only support certain sample rates. Shadow Cast will display an error if your chosen sample rate isn't supported_)
+| Option                    | Description   |
+|---------                  |------------   |
+| `-A <AUDIO ENCODER>`      | Audio encoder. All options available to `ffmpeg` should work here. Defaults to `libopus` |
+| `-V <VIDEO ENCODER>`      | Video encoder. Available options are `h264_nvenc` and `hevc_nvenc`. defaults to `hevc_nvenc` |
+| `-f <FRAMES PER SECOND>`  | Capture FPS. values from `20` to `70` are accepted. defaults to `60`  |
+| `-s <SAMPLE RATE>`        | Audio sample rate. Defaults to `48000` (_NOTE: Some encoders will only support certain sample rates. Shadow Cast will display an error if your chosen sample rate isn't supported_) |
 
 Ctrl+C / SIGINT will stop the capture session and finalize the output media.
-
-### Help. I'm getting the following error
-
-#### `ERROR: Couldn't create NvFBC instance`
-*Shadow Cast* uses the *NvFBC* facility to provide efficient, low-latency framebuffer capture on X11. By default, NVIDIA disables this on most (if not all) of its consumer-level GPUs. However, there are two ways around this restriction...
-
-- You can find a utility to patch your NVIDIA drivers in the [keylase/nvidia-patch](https://github.com/keylase/nvidia-patch) GitHub repo.
-- You can obtain a "key" to unlock this feature at runtime. The key can be set at runtime via the `SHADOW_CAST_NVFBC_KEY=<BASE64 ENCODED KEY>` environment variable. I use this method but I'm not sure how "official" it is, so no keys are provided in this repo. Feel free to message me about this.
 
 ### Requirements
 - FFMpeg (libav)

@@ -18,7 +18,7 @@ auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
                           VideoOutputSize size,
-                          std::uint32_t fps,
+                          FrameTime const& ft,
                           AVPixelFormat pixel_format) -> sc::CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
@@ -30,10 +30,10 @@ auto create_video_encoder(std::string const& encoder_name,
     sc::CodecContextPtr video_encoder_context { avcodec_alloc_context3(
         video_encoder.get()) };
     video_encoder_context->codec_id = video_encoder->id;
-    video_encoder_context->time_base.num = 1;
-    video_encoder_context->time_base.den = fps;
-    video_encoder_context->framerate.num = fps;
-    video_encoder_context->framerate.den = 1;
+    auto const timebase = ft.per_second_ratio();
+    video_encoder_context->time_base = timebase;
+    video_encoder_context->framerate.num = timebase.den;
+    video_encoder_context->framerate.den = timebase.num;
     video_encoder_context->sample_aspect_ratio.num = 0;
     video_encoder_context->sample_aspect_ratio.den = 0;
     video_encoder_context->max_b_frames = 0;
@@ -69,9 +69,6 @@ auto create_video_encoder(std::string const& encoder_name,
     hw_frame_context->height = video_encoder_context->height;
     hw_frame_context->sw_format = pixel_format;
     hw_frame_context->format = video_encoder_context->pix_fmt;
-    hw_frame_context->device_ref = av_buffer_ref(device_ctx.get());
-    hw_frame_context->device_ctx =
-        reinterpret_cast<AVHWDeviceContext*>(device_ctx->data);
 
     hw_frame_context->pool = pool;
     hw_frame_context->initial_pool_size = 1;
@@ -81,11 +78,7 @@ auto create_video_encoder(std::string const& encoder_name,
                                    av_error_to_string(ret) };
     }
 
-    /* TODO: Are we doing this correctly? It seems to be the
-     * source of memory leak...
-     */
-    video_encoder_context->hw_device_ctx = device_ctx.release();
-    video_encoder_context->hw_frames_ctx = frame_context.release();
+    video_encoder_context->hw_frames_ctx = av_buffer_ref(frame_context.get());
 
     AVDictionary* options = nullptr;
     av_dict_set_int(&options, "qp", 21, 0);

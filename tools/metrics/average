@@ -5,18 +5,26 @@ usage() {
 Usage ${0} [ OPTION... ] <INPUT FILE>
 OPTIONS
   -a    Audio
+  -A    Audio encoder
   -v    Video (default)
+  -V    Video encoder
 EOF
 }
 
 category=1
-while getopts 'av' opt; do
+while getopts 'aAvV' opt; do
     case "${opt}" in
         a)
             category=2
             ;;
+        A)
+            category=4
+            ;;
         v)
             category=1
+            ;;
+        V)
+            category=3
             ;;
         ?)
             usage

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+print_usage() {
+    cat >&2 <<-EOF
+USAGE ${0} <CAPTURE_MEDIA_FILE> <PLATFORM>
+EOF
+}
+
+[[ $# -eq 2 ]] || {
+    echo "Incorrect number of arguments" >&2
+    print_usage
+    exit 1
+}
+
+metrics_file="${1}.metrics"
+platform="${2}"
+
+[[ -f "${metrics_file}" ]] || {
+    echo "Couldn't find metrics file: ${metrics_file}" >&2
+    exit 1
+}
+
+this_dir=$(cd $(dirname "${0}"); pwd)
+report_dir="$(cd "${this_dir}/.."; pwd)/report"
+percentile="${this_dir}/metrics/percentile"
+average="${this_dir}/metrics/average"
+plot="${this_dir}/metrics/plot"
+
+[[ -d "${report_dir}" ]] && rm -rf "${report_dir}"
+mkdir -p "${report_dir}/images"
+
+print_percentiles() {
+    echo "| Percentile  | Video     | Audio     | Video encoding | Audio encoding |"
+    echo "|----------   |---------  |--------   |--------------- |--------------- |"
+    for p in "99.99" 99 90 75 50; do
+        local video_val=$(printf "%.3fms" $(${percentile} -v "${metrics_file}" ${p} | awk -F, '{ print $4/1000000; }'))
+        local video_encoding_val=$(printf "%.3fms" $(${percentile} -V "${metrics_file}" ${p} | awk -F, '{ print $4/1000000; }'))
+        local audio_val=$(printf "%.3fms" $(${percentile} -a "${metrics_file}" ${p} | awk -F, '{ print $4/1000000; }'))
+        local audio_encoding_val=$(printf "%.3fms" $(${percentile} -A "${metrics_file}" ${p} | awk -F, '{ print $4/1000000; }'))
+        echo "| ${p}        | \`${video_val}\`  | \`${audio_val}\`  | \`${video_encoding_val}\` | \`${audio_encoding_val}\` |"
+    done
+}
+
+print_averages() {
+    echo "| Stream  | Capture       | Encoding  |"
+    echo "|-------- |-------------  |---------  |"
+
+    local video_val=$(${average} -v "${metrics_file}")
+    local video_encoding_val=$(${average} -V "${metrics_file}")
+    local audio_val=$(${average} -a "${metrics_file}")
+    local audio_encoding_val=$(${average} -A "${metrics_file}")
+
+    echo "| Video   | \`$(printf "%.3fms" $(echo "scale=3; ${video_val}/1000000" | bc))\`  | \
+        \`$(printf "%.3fms" $(echo "scale=3; ${video_encoding_val}/1000000" | bc))\`  |"
+    echo "| Audio   | \`$(printf "%.3fms" $(echo "scale=3; ${audio_val}/1000000" | bc))\`  | \
+        \`$(printf "%.3fms" $(echo "scale=3; ${audio_encoding_val}/1000000" | bc))\`  |"
+}
+
+generate_charts() {
+    ${plot} -A ${metrics_file} 2>/dev/null
+    cp ${metrics_file}.chart.png "${report_dir}/images/${platform}-video-detailed.png"
+    echo "##### Video frame times"
+    echo -e "![Video frame times](images/${platform}-video-detailed.png)\n"
+    ${plot} -e -A ${metrics_file} 2>/dev/null
+    cp ${metrics_file}.chart.png "${report_dir}/images/${platform}-video-encoding-detailed.png"
+    echo "##### Video encoding frame times"
+    echo -e "![Video encoding frame times](images/${platform}-video-encoding-detailed.png)\n"
+    ${plot} -V ${metrics_file} 2>/dev/null
+    cp ${metrics_file}.chart.png "${report_dir}/images/${platform}-audio-detailed.png"
+    echo "##### Audio frame times"
+    echo -e "![Audio frame times](images/${platform}-audio-detailed.png)\n"
+    ${plot} -e -V ${metrics_file} 2>/dev/null
+    cp ${metrics_file}.chart.png "${report_dir}/images/${platform}-audio-encoding-detailed.png"
+    echo "##### Audio encoding frame times"
+    echo -e "![Audio encoding frame times](images/${platform}-audio-encoding-detailed.png)\n"
+    ${plot} -s ${metrics_file} 2>/dev/null
+    cp ${metrics_file}.chart.png "${report_dir}/images/${platform}-video-audio-downsampled.png"
+    echo "##### Video and Audio frame times (downsampled)"
+    echo -e "![Video and Audio frame times downsampled](images/${platform}-video-audio-downsampled.png)\n"
+    ${plot} -e -s ${metrics_file} 2>/dev/null
+    cp ${metrics_file}.chart.png "${report_dir}/images/${platform}-video-audio-encoding-downsampled.png"
+    echo "##### Video and Audio encoding frame times (downsampled)"
+    echo -e "![Video and Audio encoding frame times downsampled](images/${platform}-video-audio-encoding-downsampled.png)\n"
+}
+
+(
+echo -e "### Performance - ${platform}"
+echo -e "Version: \`$(${this_dir}/next-version | tr -d '\n')\`\n"
+echo -e "#### Average frame times\n"
+print_averages
+echo -e "\n#### Frame time percentiles\n"
+print_percentiles
+echo -e "\n#### Frame time charts\n"
+generate_charts
+) | tee "${report_dir}/${platform}-report.md"
+
+markdown "${report_dir}/${platform}-report.md" > "${report_dir}/${platform}-report.html"

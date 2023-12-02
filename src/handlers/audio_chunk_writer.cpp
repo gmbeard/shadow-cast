@@ -3,6 +3,7 @@
 #include "av/sample_format.hpp"
 #include "config.hpp"
 #include "error.hpp"
+#include "services/encoder.hpp"
 #include <algorithm>
 #include <cassert>
 #include <memory>
@@ -11,15 +12,14 @@
 namespace sc
 {
 
-ChunkWriter::ChunkWriter(AVFormatContext* format_context,
-                         AVCodecContext* codec_context,
-                         AVStream* stream) noexcept
-    : format_context_ { format_context }
-    , codec_context_ { codec_context }
+ChunkWriter::ChunkWriter(AVCodecContext* codec_context,
+                         AVStream* stream,
+                         Encoder encoder) noexcept
+    : codec_context_ { codec_context }
     , stream_ { stream }
+    , encoder_ { encoder }
     , frame_ { av_frame_alloc() }
     , total_samples_written_ { 0 }
-    , packet_ { av_packet_alloc() }
 {
 }
 
@@ -32,7 +32,9 @@ auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
     auto const sample_size = sc::sample_format_size(sample_format);
     auto const interleaved = sc::is_interleaved_format(sample_format);
 
-    sc::BorrowedPtr<AVFrame> frame = frame_.get();
+    auto encoder_frame =
+        encoder_.prepare_frame(codec_context_.get(), stream_.get());
+    auto* frame = encoder_frame->frame.get();
 
     frame->nb_samples = chunk.sample_count;
     frame->format = codec_context_->sample_fmt;
@@ -46,9 +48,7 @@ auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
     frame->pts = total_samples_written_;
     total_samples_written_ += frame->nb_samples;
 
-    sc::initialize_writable_buffer(frame.get());
-
-    AVFrameUnrefGuard unref_guard { frame };
+    sc::initialize_writable_buffer(frame);
 
     auto n = 0;
     for (auto const& channel_buffer : chunk.channel_buffers()) {
@@ -63,11 +63,7 @@ auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
         std::copy(begin(source), end(source), begin(target));
     }
 
-    send_frame(frame.get(),
-               codec_context_.get(),
-               format_context_.get(),
-               stream_.get(),
-               packet_.get());
+    encoder_.write_frame(std::move(encoder_frame));
 }
 
 } // namespace sc

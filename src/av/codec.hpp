@@ -25,7 +25,7 @@ auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
                           VideoOutputSize size,
-                          std::uint32_t fps,
+                          FrameTime const& ft,
                           AVPixelFormat pixel_format) -> sc::CodecContextPtr;
 } // namespace sc
 

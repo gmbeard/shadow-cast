@@ -115,6 +115,7 @@ DRMVideoService::DRMVideoService(
     , wayland_ { &wayland }
     , platform_egl_ { &plaform_egl } // clang-format off
     SC_METRICS_MEMBER_USE(metrics_service, metrics_service_)
+    SC_METRICS_MEMBER_USE(0, metrics_start_time_)
 // clang-format on
 {
 #ifdef SHADOW_CAST_ENABLE_METRICS
@@ -161,6 +162,7 @@ auto DRMVideoService::on_init(ReadinessRegister reg) -> void
     egl_->eglSwapInterval(platform_egl_->egl_display.get(), 0);
 
     reg(FrameTimeRatio(1), &dispatch_frame);
+    frame_time_ = reg.frame_time();
 
 #ifdef SHADOW_CAST_ENABLE_METRICS
     metrics_start_time_ = global_elapsed.nanosecond_value();
@@ -266,7 +268,7 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
         }
     });
 
-    (*self.frame_handler_)(self.cuda_array_, self.nvcuda_);
+    (*self.frame_handler_)(self.cuda_array_, self.nvcuda_, self.frame_time_);
 
 #ifdef SHADOW_CAST_ENABLE_METRICS
     self.metrics_service_->post_time_metric(

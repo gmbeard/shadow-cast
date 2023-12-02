@@ -35,6 +35,8 @@ add_library(shadow-cast-obj
     services/audio_service.cpp
     services/context.cpp
     services/drm_video_service.cpp
+    services/encoder.cpp
+    services/encoder_service.cpp
     services/metrics_service.cpp
     services/readiness.cpp
     services/service.cpp
@@ -42,10 +44,11 @@ add_library(shadow-cast-obj
     services/signal_service.cpp
     services/video_service.cpp
 
+    utils/base64.cpp
     utils/cmd_line.cpp
     utils/contracts.cpp
-    utils/base64.cpp
     utils/elapsed.cpp
+    utils/frame_time.cpp
     utils/result.cpp
 
     error.cpp

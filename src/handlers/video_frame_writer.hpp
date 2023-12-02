@@ -3,24 +3,26 @@
 
 #include "av.hpp"
 #include "nvidia.hpp"
+#include "services/encoder.hpp"
+#include <cstdint>
 
 namespace sc
 {
 struct VideoFrameWriter
 {
-    VideoFrameWriter(AVFormatContext* fmt_context,
-                     AVCodecContext* codec_context,
-                     AVStream* stream);
+    VideoFrameWriter(AVCodecContext* codec_context,
+                     AVStream* stream,
+                     Encoder encoder);
 
-    auto operator()(CUdeviceptr cu_device_ptr, NVFBC_FRAME_GRAB_INFO) -> void;
+    auto operator()(CUdeviceptr cu_device_ptr,
+                    NVFBC_FRAME_GRAB_INFO,
+                    std::uint64_t) -> void;
 
 private:
-    BorrowedPtr<AVFormatContext> format_context_;
     BorrowedPtr<AVCodecContext> codec_context_;
     BorrowedPtr<AVStream> stream_;
-    FramePtr frame_;
+    Encoder encoder_;
     std::size_t frame_number_ { 0 };
-    PacketPtr packet_;
 };
 
 } // namespace sc

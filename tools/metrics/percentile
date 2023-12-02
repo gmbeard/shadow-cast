@@ -5,18 +5,26 @@ usage() {
 Usage ${0} [ OPTION... ] <INPUT FILE> <PERCENTILE>
 OPTIONS
   -a    Audio
+  -A    Audio Encoding
   -v    Video (default)
+  -V    Video Encoding
 EOF
 }
 
 category=1
-while getopts 'av' opt; do
+while getopts 'aAvV' opt; do
     case "${opt}" in
         a)
             category=2
             ;;
         v)
             category=1
+            ;;
+        A)
+            category=4
+            ;;
+        V)
+            category=3
             ;;
         ?)
             usage
@@ -32,7 +40,7 @@ if [[ $# -lt 2 ]]; then
     exit 1
 fi
 
-set -x
+#set -x
 
 <"${1}" grep -E '^'${category}'' \
     | sort -k4 -t, -g \

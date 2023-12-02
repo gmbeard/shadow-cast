@@ -1,6 +1,7 @@
 #include "nvidia.hpp"
 #include "nvidia/cuda.hpp"
 #include "utils/base64.hpp"
+#include "utils/frame_time.hpp"
 #include "utils/symbol.hpp"
 #include <dlfcn.h>
 
@@ -145,14 +146,14 @@ auto create_nvfbc_session(sc::NvFBC instance) -> sc::NvFBCSessionHandlePtr
 
 auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                   NvFBC nvfbc,
-                                  std::uint32_t fps) -> void
+                                  FrameTime const& frame_time) -> void
 {
     NVFBC_CREATE_CAPTURE_SESSION_PARAMS create_capture_params {};
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
     create_capture_params.eCaptureType = NVFBC_CAPTURE_SHARED_CUDA;
     create_capture_params.bWithCursor = NVFBC_TRUE;
     create_capture_params.eTrackingType = NVFBC_TRACKING_SCREEN;
-    create_capture_params.dwSamplingRateMs = 1000u / fps;
+    create_capture_params.dwSamplingRateMs = frame_time.value_in_milliseconds();
     create_capture_params.bAllowDirectCapture = NVFBC_FALSE;
     create_capture_params.bPushModel = NVFBC_FALSE;
 
@@ -162,7 +163,7 @@ auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
 
     NVFBC_TOCUDA_SETUP_PARAMS setup_params {};
     setup_params.dwVersion = NVFBC_TOCUDA_SETUP_PARAMS_VER;
-    setup_params.eBufferFormat = NVFBC_BUFFER_FORMAT_YUV444P;
+    setup_params.eBufferFormat = NVFBC_BUFFER_FORMAT_BGRA;
 
     if (nvfbc.nvFBCToCudaSetUp(nvfbc_handle, &setup_params) != NVFBC_SUCCESS)
         throw sc::NvFBCError { nvfbc, nvfbc_handle };

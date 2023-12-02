@@ -14,6 +14,7 @@ mkdir ./dist
 tar \
     --exclude './build' \
     --exclude './dist' \
+    --exclude './report' \
     --exclude './.private' \
     --exclude './.git' \
     --exclude './.github' \

@@ -21,7 +21,7 @@ struct VideoService final : Service
     friend auto dispatch_frame(Service&) -> void;
 
     using CaptureFrameReceiverType =
-        Receiver<void(CUdeviceptr, NVFBC_FRAME_GRAB_INFO)>;
+        Receiver<void(CUdeviceptr, NVFBC_FRAME_GRAB_INFO, std::uint64_t)>;
 
     VideoService(NvFBC,
                  BorrowedPtr<std::remove_pointer_t<CUcontext>>,
@@ -46,6 +46,7 @@ private:
     SC_METRICS_MEMBER_DECLARE(MetricsService*, metrics_service_);
     SC_METRICS_MEMBER_DECLARE(Elapsed, frame_timer_);
     SC_METRICS_MEMBER_DECLARE(std::size_t, metrics_start_time_);
+    std::uint64_t frame_time_ { 0 };
 };
 
 auto dispatch_frame(Service&) -> void;
