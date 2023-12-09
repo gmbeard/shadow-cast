@@ -1,61 +1,50 @@
 #include "handlers/video_frame_writer.hpp"
 #include "handlers/audio_chunk_writer.hpp"
+#include "services/encoder.hpp"
 #include "utils/elapsed.hpp"
 
-auto constexpr kCudaFrameAlignment = 256;
 namespace sc
 {
 
-VideoFrameWriter::VideoFrameWriter(AVFormatContext* fmt_context,
-                                   AVCodecContext* codec_context,
-                                   AVStream* stream)
-    : format_context_ { fmt_context }
-    , codec_context_ { codec_context }
+VideoFrameWriter::VideoFrameWriter(AVCodecContext* codec_context,
+                                   AVStream* stream,
+                                   Encoder encoder)
+    : codec_context_ { codec_context }
     , stream_ { stream }
-    , frame_ { av_frame_alloc() }
-    , packet_ { av_packet_alloc() }
+    , encoder_ { encoder }
 {
 }
 
 auto VideoFrameWriter::operator()(CUdeviceptr cu_device_ptr,
-                                  NVFBC_FRAME_GRAB_INFO) -> void
+                                  NVFBC_FRAME_GRAB_INFO,
+                                  std::uint64_t frame_time) -> void
 {
-    auto aligned_width = FFALIGN(codec_context_->width, kCudaFrameAlignment);
+    auto encoder_frame =
+        encoder_.prepare_frame(codec_context_.get(), stream_.get());
+    auto* frame = encoder_frame->frame.get();
 
-    sc::AVFrameUnrefGuard unref_guard { frame_.get() };
-
-    frame_->hw_frames_ctx = av_buffer_ref(codec_context_->hw_frames_ctx);
+    frame->hw_frames_ctx = av_buffer_ref(codec_context_->hw_frames_ctx);
 
     auto hw_frames_ctx = reinterpret_cast<AVHWFramesContext*>(
         codec_context_->hw_frames_ctx->data);
-    frame_->buf[0] = av_buffer_pool_get(hw_frames_ctx->pool);
+    frame->buf[0] = av_buffer_pool_get(hw_frames_ctx->pool);
 
-    /* Layout for yuv444p...
-     */
-    frame_->data[0] = reinterpret_cast<uint8_t*>(cu_device_ptr);
-    frame_->data[1] = frame_->data[0] + aligned_width * codec_context_->height;
-    frame_->data[2] = frame_->data[1] + aligned_width * codec_context_->height;
-    frame_->linesize[0] = aligned_width;
-    frame_->linesize[1] = aligned_width;
-    frame_->linesize[2] = aligned_width;
+    frame->data[0] = reinterpret_cast<uint8_t*>(cu_device_ptr);
+    frame->linesize[0] = codec_context_->width * sizeof(std::uint32_t);
 
-    frame_->extended_data = frame_->data;
-    frame_->format = codec_context_->pix_fmt;
-    frame_->width = codec_context_->width;
-    frame_->height = codec_context_->height;
-    frame_->color_range = codec_context_->color_range;
-    frame_->color_primaries = codec_context_->color_primaries;
-    frame_->color_trc = codec_context_->color_trc;
-    frame_->colorspace = codec_context_->colorspace;
-    frame_->chroma_location = codec_context_->chroma_sample_location;
+    frame->extended_data = frame->data;
+    frame->format = codec_context_->pix_fmt;
+    frame->width = codec_context_->width;
+    frame->height = codec_context_->height;
+    frame->color_range = codec_context_->color_range;
+    frame->color_primaries = codec_context_->color_primaries;
+    frame->color_trc = codec_context_->color_trc;
+    frame->colorspace = codec_context_->colorspace;
+    frame->chroma_location = codec_context_->chroma_sample_location;
 
-    frame_->pts = frame_number_++;
+    frame->pts = frame_time * frame_number_++;
 
-    send_frame(frame_.get(),
-               codec_context_.get(),
-               format_context_.get(),
-               stream_.get(),
-               packet_.get());
+    encoder_.write_frame(std::move(encoder_frame));
 }
 
 } // namespace sc

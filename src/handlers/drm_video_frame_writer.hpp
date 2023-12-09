@@ -3,24 +3,24 @@
 
 #include "av.hpp"
 #include "nvidia.hpp"
+#include "services/encoder.hpp"
+#include <cstdint>
 
 namespace sc
 {
 struct DRMVideoFrameWriter
 {
-    DRMVideoFrameWriter(AVFormatContext* fmt_context,
-                        AVCodecContext* codec_context,
-                        AVStream* stream);
+    DRMVideoFrameWriter(AVCodecContext* codec_context,
+                        AVStream* stream,
+                        Encoder encoder);
 
-    auto operator()(CUarray, NvCuda const&) -> void;
+    auto operator()(CUarray, NvCuda const&, std::uint64_t) -> void;
 
 private:
-    BorrowedPtr<AVFormatContext> format_context_;
     BorrowedPtr<AVCodecContext> codec_context_;
     BorrowedPtr<AVStream> stream_;
-    FramePtr frame_;
+    Encoder encoder_;
     std::size_t frame_number_ { 0 };
-    PacketPtr packet_;
 };
 
 } // namespace sc

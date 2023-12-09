@@ -18,6 +18,7 @@
 #include "services/service.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include "utils/receiver.hpp"
+#include <cstdint>
 #include <optional>
 #include <signal.h>
 
@@ -26,7 +27,8 @@ namespace sc
 
 struct DRMVideoService final : Service
 {
-    using CaptureFrameReceiverType = Receiver<void(CUarray, NvCuda const&)>;
+    using CaptureFrameReceiverType =
+        Receiver<void(CUarray, NvCuda const&, std::uint64_t)>;
 
     explicit DRMVideoService(NvCuda nvcuda,
                              CUcontext cuda_ctx,
@@ -63,6 +65,7 @@ private:
     SC_METRICS_MEMBER_DECLARE(MetricsService*, metrics_service_);
     SC_METRICS_MEMBER_DECLARE(Elapsed, frame_timer_);
     SC_METRICS_MEMBER_DECLARE(std::size_t, metrics_start_time_);
+    std::uint64_t frame_time_ { 0 };
 };
 
 } // namespace sc

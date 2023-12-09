@@ -2,6 +2,7 @@
 #define SHADOW_CAST_UTILS_CMD_LINE_HPP_INCLUDED
 
 #include "error.hpp"
+#include "utils/frame_time.hpp"
 #include "utils/result.hpp"
 #include <algorithm>
 #include <array>
@@ -43,9 +44,10 @@ struct Parameters
 {
     std::string video_encoder;
     std::string audio_encoder;
-    std::int32_t frame_rate;
+    FrameTime frame_time;
     std::int32_t sample_rate;
     std::string output_file;
+    bool strict_frame_time { true };
 };
 
 struct NoValidation

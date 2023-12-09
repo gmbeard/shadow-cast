@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+project_dir=$(cd $(dirname ${0})/..; pwd)
+changes_dir="${project_dir}/.versioning/changes"
+current_version=$(cat ${project_dir}/.versioning/current | tr -d '\n')
+
+version_list=(${current_version})
+
+test_multiple() {
+    [[ $(ls -1 "${changes_dir}" 2>/dev/null | grep "${1}" | wc -l) -gt 0 ]]
+}
+
+if test_multiple "patch" ; then
+    version_list+=($(echo "${current_version}" | semverutil -P))
+fi
+
+if test_multiple "minor" ; then
+    version_list+=($(echo "${current_version}" | semverutil -N))
+fi
+
+if test_multiple "major" ; then
+    version_list+=($(echo "${current_version}" | semverutil -M))
+fi
+
+echo ${version_list[@]} | semverutil

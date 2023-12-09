@@ -1,4 +1,5 @@
 #include "./shadow_cast.hpp"
+#include "utils/frame_time.hpp"
 
 #include <X11/Xlib.h>
 #include <cassert>
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <initializer_list>
 #include <iostream>
+#include <memory>
 #include <signal.h>
 #include <thread>
 #include <type_traits>
@@ -69,6 +71,103 @@ struct DestroyCaptureSessionGuard
     NVFBC_SESSION_HANDLE nvfbc_handle;
     sc::NvFBC nvfbc;
 };
+
+auto run_loop(sc::Context& main,
+              sc::Context& media,
+              sc::Context& audio SC_METRICS_PARAM_DEFINE(sc::Context&, metrics),
+              sc::BorrowedPtr<AVCodecContext> video_codec,
+              sc::BorrowedPtr<AVStream> video_stream,
+              sc::BorrowedPtr<AVCodecContext> audio_codec,
+              sc::BorrowedPtr<AVStream> audio_stream) -> void
+{
+    std::mutex exception_mutex;
+    std::exception_ptr ex;
+    sc::Encoder encoder { media };
+
+    auto const stop = [&] {
+#ifdef SHADOW_CAST_ENABLE_METRICS
+        metrics.request_stop();
+#endif
+        main.request_stop();
+        audio.request_stop();
+    };
+
+    main.services().add<sc::SignalService>(sc::SignalService {});
+    add_signal_handler(main, SIGINT, [&](std::uint32_t) { stop(); });
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    auto metrics_thread = std::thread([&] {
+        SC_SCOPE_GUARD([&] { stop(); });
+        try {
+            metrics.run();
+        }
+        catch (...) {
+            std::lock_guard lock { exception_mutex };
+            if (!ex)
+                ex = std::current_exception();
+        }
+    });
+#endif
+
+    auto media_thread = std::thread([&] {
+        SC_SCOPE_GUARD([&] { stop(); });
+        try {
+            media.run();
+        }
+        catch (...) {
+            std::lock_guard lock { exception_mutex };
+            if (!ex)
+                ex = std::current_exception();
+        }
+    });
+
+    auto audio_thread = std::thread([&] {
+        SC_SCOPE_GUARD([&] { stop(); });
+        try {
+            audio.run();
+        }
+        catch (...) {
+            std::lock_guard lock { exception_mutex };
+            if (!ex)
+                ex = std::current_exception();
+        }
+    });
+
+    {
+        SC_SCOPE_GUARD([&] { stop(); });
+        try {
+            main.run();
+        }
+        catch (...) {
+            std::lock_guard lock { exception_mutex };
+            if (!ex)
+                ex = std::current_exception();
+        }
+    }
+
+    std::cerr << "Finalizing output. Please wait...\n";
+
+#ifdef SHADOW_CAST_ENABLE_METRICS
+    metrics_thread.join();
+#endif
+    audio_thread.join();
+
+    try {
+        encoder.flush(video_codec.get(), video_stream.get());
+        encoder.flush(audio_codec.get(), audio_stream.get());
+    }
+    catch (...) {
+        std::lock_guard lock { exception_mutex };
+        if (!ex)
+            ex = std::current_exception();
+    }
+
+    media.request_stop();
+    media_thread.join();
+
+    if (ex)
+        std::rethrow_exception(ex);
+}
 
 auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     -> void
@@ -161,7 +260,7 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
         cuda_ctx.get(),
         nullptr, /*buffer_pool.get(),*/
         { .width = wayland->output_width, .height = wayland->output_height },
-        params.frame_rate,
+        params.frame_time,
         AV_PIX_FMT_BGR0);
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
@@ -200,13 +299,14 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     }
 
 #ifdef SHADOW_CAST_ENABLE_METRICS
-    sc::Context metrics_ctx { static_cast<std::uint32_t>(params.frame_rate) };
+    sc::Context metrics_ctx { params.frame_time };
     metrics_ctx.services().add_from_factory<sc::MetricsService>([&] {
         return std::make_unique<sc::MetricsService>(params.output_file);
     });
 #endif
-    sc::Context ctx { static_cast<std::uint32_t>(params.frame_rate) };
-    sc::Context audio_ctx { static_cast<std::uint32_t>(params.frame_rate) };
+    sc::Context ctx { params.frame_time };
+    sc::Context audio_ctx { params.frame_time };
+    sc::Context media_ctx { params.frame_time };
 
     ctx.services().add<sc::SignalService>(sc::SignalService {});
     add_signal_handler(ctx, SIGINT, [&](std::uint32_t) {
@@ -235,50 +335,36 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
                 metrics_ctx.services().use_if<sc::MetricsService>()));
     });
 
+    media_ctx.services().add_from_factory<sc::EncoderService>([&] {
+        return std::make_unique<sc::EncoderService>(
+            format_context.get() SC_METRICS_PARAM_USE(
+                metrics_ctx.services().use_if<sc::MetricsService>()));
+    });
+
+    sc::Encoder media_writer { media_ctx };
+
     set_audio_chunk_handler(audio_ctx,
-                            sc::ChunkWriter { format_context.get(),
-                                              audio_encoder_context.get(),
-                                              stream.get() });
+                            sc::ChunkWriter { audio_encoder_context.get(),
+                                              stream.get(),
+                                              media_writer });
     set_drm_video_frame_handler(
         ctx,
-        sc::DRMVideoFrameWriter { format_context.get(),
-                                  video_encoder_context.get(),
-                                  video_stream.get() });
-
-    set_stream_end_handler(audio_ctx,
-                           sc::StreamFinalizer { format_context.get(),
-                                                 audio_encoder_context.get(),
-                                                 video_encoder_context.get(),
-                                                 stream.get(),
-                                                 video_stream.get() });
-
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    auto metrics_thread = std::thread([&] { metrics_ctx.run(); });
-#endif
-    auto audio_thread = std::thread([&] {
-        try {
-            audio_ctx.run();
-        }
-        catch (std::exception const& e) {
-            std::cerr << "Audio capture failed: " << e.what() << '\n';
-        }
-    });
+        sc::DRMVideoFrameWriter {
+            video_encoder_context.get(), video_stream.get(), media_writer });
 
     SC_SCOPE_GUARD([&] {
-        audio_ctx.request_stop();
-        audio_thread.join();
-#ifdef SHADOW_CAST_ENABLE_METRICS
-        metrics_thread.join();
-#endif
-        std::cerr << "Finalizing output...";
-        if (auto const ret = av_write_trailer(format_context.get()); ret < 0) {
+        if (auto const ret = av_write_trailer(format_context.get()); ret < 0)
             std::cerr << "Failed to write trailer: "
-                      << sc::av_error_to_string(ret);
-        }
-        std::cerr << '\n';
+                      << sc::av_error_to_string(ret) << '\n';
     });
 
-    ctx.run();
+    run_loop(ctx,
+             media_ctx,
+             audio_ctx SC_METRICS_PARAM_USE(metrics_ctx),
+             video_encoder_context.get(),
+             video_stream.get(),
+             audio_encoder_context.get(),
+             stream.get());
 }
 
 auto run(sc::Parameters const& params) -> void
@@ -299,7 +385,7 @@ auto run(sc::Parameters const& params) -> void
      */
     auto nvfbc_instance = sc::create_nvfbc_session(nvfbc);
     sc::create_nvfbc_capture_session(
-        nvfbc_instance.get(), nvfbc, params.frame_rate);
+        nvfbc_instance.get(), nvfbc, params.frame_time);
 
     DestroyCaptureSessionGuard destroy_capture_session_guard {
         nvfbc_instance.get(), nvfbc
@@ -393,8 +479,8 @@ auto run(sc::Parameters const& params) -> void
                                  cuda_ctx.get(),
                                  buffer_pool.get(),
                                  size,
-                                 params.frame_rate,
-                                 AV_PIX_FMT_YUV444P);
+                                 params.frame_time,
+                                 AV_PIX_FMT_BGR0);
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
         format_context.get(), video_encoder_context->codec) };
@@ -431,10 +517,11 @@ auto run(sc::Parameters const& params) -> void
                             sc::av_error_to_string(ret) };
     }
 
-    sc::Context ctx { static_cast<std::uint32_t>(params.frame_rate) };
-    sc::Context audio_ctx { static_cast<std::uint32_t>(params.frame_rate) };
+    sc::Context ctx { params.frame_time };
+    sc::Context audio_ctx { params.frame_time };
+    sc::Context media_ctx { params.frame_time };
 #ifdef SHADOW_CAST_ENABLE_METRICS
-    sc::Context metrics_ctx { static_cast<std::uint32_t>(params.frame_rate) };
+    sc::Context metrics_ctx { params.frame_time };
     metrics_ctx.services().add_from_factory<sc::MetricsService>([&] {
         return std::make_unique<sc::MetricsService>(params.output_file);
     });
@@ -465,43 +552,43 @@ auto run(sc::Parameters const& params) -> void
                 metrics_ctx.services().use_if<sc::MetricsService>()));
     });
 
+    media_ctx.services().add_from_factory<sc::EncoderService>([&] {
+        return std::make_unique<sc::EncoderService>(
+            format_context.get() SC_METRICS_PARAM_USE(
+                metrics_ctx.services().use_if<sc::MetricsService>()));
+    });
+
+    sc::Encoder media_writer { media_ctx };
+
     set_audio_chunk_handler(audio_ctx,
-                            sc::ChunkWriter { format_context.get(),
-                                              audio_encoder_context.get(),
-                                              stream.get() });
+                            sc::ChunkWriter { audio_encoder_context.get(),
+                                              stream.get(),
+                                              media_writer });
     set_video_frame_handler(ctx,
-                            sc::VideoFrameWriter { format_context.get(),
-                                                   video_encoder_context.get(),
-                                                   video_stream.get() });
+                            sc::VideoFrameWriter { video_encoder_context.get(),
+                                                   video_stream.get(),
+                                                   media_writer });
 
-    set_stream_end_handler(audio_ctx,
-                           sc::StreamFinalizer { format_context.get(),
-                                                 audio_encoder_context.get(),
-                                                 video_encoder_context.get(),
-                                                 stream.get(),
-                                                 video_stream.get() });
+    SC_SCOPE_GUARD([&] {
+        if (auto const ret = av_write_trailer(format_context.get()); ret < 0)
+            std::cerr << "Failed to write trailer: "
+                      << sc::av_error_to_string(ret) << '\n';
+    });
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    auto metrics_thread = std::thread([&] { metrics_ctx.run(); });
-#endif
-    auto audio_thread = std::thread([&] { audio_ctx.run(); });
-    ctx.run();
-    audio_thread.join();
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    metrics_thread.join();
-#endif
-
-    std::cerr << "Finalizing output...\n";
-    if (auto const ret = av_write_trailer(format_context.get()); ret < 0)
-        throw std::runtime_error { "Failed to write trailer: " +
-                                   sc::av_error_to_string(ret) };
+    run_loop(ctx,
+             media_ctx,
+             audio_ctx SC_METRICS_PARAM_USE(metrics_ctx),
+             video_encoder_context.get(),
+             video_stream.get(),
+             audio_encoder_context.get(),
+             stream.get());
 }
 
 auto main(int argc, char const** argv) -> int
 {
     try {
         sc::block_signals({ SIGINT, SIGCHLD });
-        auto const params =
+        auto params =
             sc::get_parameters(sc::parse_cmd_line(argc - 1, argv + 1));
 
         if (!params) {
@@ -523,8 +610,14 @@ auto main(int argc, char const** argv) -> int
             if (wayland_display)
                 run_wayland(sc::get_value(std::move(params)),
                             std::move(wayland_display));
-            else
-                run(sc::get_value(std::move(params)));
+            else {
+                auto p = sc::get_value(std::move(params));
+
+                if (!p.strict_frame_time)
+                    p.frame_time = sc::truncate_to_millisecond(p.frame_time);
+
+                run(std::move(p));
+            }
         }
     }
     catch (std::exception const& e) {

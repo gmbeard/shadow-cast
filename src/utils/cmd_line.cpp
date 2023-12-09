@@ -3,6 +3,7 @@
 #include <array>
 #include <cassert>
 #include <charconv>
+#include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
@@ -14,6 +15,8 @@ using namespace std::literals::string_literals;
 
 namespace
 {
+
+constexpr char const kStrictFrameTimeEnvVar[] = "SHADOW_CAST_STRICT_FPS";
 
 template <typename Container, typename... T>
 constexpr auto construct(T... vals) noexcept -> Container
@@ -39,9 +42,9 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
       .long_name = "--framerate",
       .option = sc::CmdLineOption::frame_rate,
       .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
-      .validation = sc::ValidRange { 20, 60 },
+      .validation = sc::ValidRange { 20, 70 },
       .description =
-          "Video frame rate in frames-per-second. Must be between 20 - 60. "
+          "Video frame rate in frames-per-second. Must be between 20 - 70. "
           "Default 60" },
 
     /* Show help...
@@ -330,6 +333,14 @@ auto parse_cmd_line(int argc, char const** argv) -> CmdLine
     return cmdline;
 }
 
+auto read_env(Parameters& params) -> void
+{
+    if (auto const* strict_frame_time = std::getenv(kStrictFrameTimeEnvVar);
+        strict_frame_time) {
+        params.strict_frame_time = std::strcmp(strict_frame_time, "1") == 0;
+    }
+}
+
 auto get_parameters(CmdLine const& cmdline) noexcept
     -> Result<Parameters, CmdLineError>
 {
@@ -344,8 +355,8 @@ auto get_parameters(CmdLine const& cmdline) noexcept
             sc::CmdLineOption::video_encoder, "hevc_nvenc") },
         .audio_encoder = std::string { cmdline.get_option_value_or_default(
             sc::CmdLineOption::audio_encoder, "libopus") },
-        .frame_rate = cmdline.get_option_value_or_default(
-            sc::CmdLineOption::frame_rate, 60, sc::number_value),
+        .frame_time = from_fps(cmdline.get_option_value_or_default(
+            sc::CmdLineOption::frame_rate, 60, sc::number_value)),
         .sample_rate = cmdline.get_option_value_or_default(
             sc::CmdLineOption::sample_rate, 48'000, sc::number_value),
         .output_file = cmdline.args().size() ? cmdline.args()[0] : ""
@@ -355,6 +366,7 @@ auto get_parameters(CmdLine const& cmdline) noexcept
         return CmdLineError { CmdLineError::error,
                               "Missing parameter: output file" };
 
+    read_env(params);
     return params;
 }
 

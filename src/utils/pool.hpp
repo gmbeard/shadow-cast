@@ -31,6 +31,14 @@ private:
 };
 
 template <typename T>
+struct DefaultObjectLifetime
+{
+    auto construct(T* ptr) -> void { new (static_cast<void*>(ptr)) T {}; }
+
+    auto destruct(T* ptr) -> void { ptr->~T(); }
+};
+
+template <typename T>
 struct SynchronizationGuard
 {
     T& sync;
@@ -51,13 +59,15 @@ struct SynchronizationGuard
 };
 
 template <ListItem T,
+          typename ObjectLifetime = DefaultObjectLifetime<T>,
           typename Allocator = std::allocator<T>,
           typename Synchronization = DefaultPoolSynchronization>
 struct Pool
 {
     struct PoolItemDeleter
     {
-        PoolItemDeleter(Pool<T, Allocator, Synchronization>& pool) noexcept
+        PoolItemDeleter(
+            Pool<T, ObjectLifetime, Allocator, Synchronization>& pool) noexcept
             : pool_ { &pool }
         {
         }
@@ -65,13 +75,15 @@ struct Pool
         auto operator()(T* ptr) const noexcept -> void { pool_->put(ptr); }
 
     private:
-        Pool<T, Allocator, Synchronization>* pool_;
+        Pool<T, ObjectLifetime, Allocator, Synchronization>* pool_;
     };
 
     using ItemPtr = std::unique_ptr<T, PoolItemDeleter>;
 
-    explicit Pool(Allocator alloc = Allocator {}) noexcept
-        : alloc_ { alloc }
+    explicit Pool(ObjectLifetime lifetime = ObjectLifetime {},
+                  Allocator alloc = Allocator {}) noexcept
+        : lifetime_ { lifetime }
+        , alloc_ { alloc }
     {
     }
 
@@ -105,7 +117,7 @@ struct Pool
 
         T* new_item = allocate_item();
         try {
-            new (static_cast<void*>(new_item)) T {};
+            lifetime_.construct(new_item);
         }
         catch (...) {
             deallocate_item(new_item);
@@ -125,6 +137,24 @@ struct Pool
         pool_list_.push_back(item);
     }
 
+    /* Pre-populates the pool with `n` items
+     */
+    auto fill(std::size_t n) -> void
+    {
+        while (n--) {
+            T* new_item = allocate_item();
+            try {
+                lifetime_.construct(new_item);
+            }
+            catch (...) {
+                deallocate_item(new_item);
+                throw;
+            }
+
+            put(new_item);
+        }
+    }
+
     /* Removes and deallocates all remaining
      * items in the pool. There should have been a
      * equal number of put() and get() calls
@@ -138,7 +168,7 @@ struct Pool
             T* item = &*it;
             it = pool_list_.erase(it);
 
-            item->~T();
+            lifetime_.destruct(item);
             deallocate_item(item);
         }
     }
@@ -160,13 +190,17 @@ private:
         alloc.deallocate(item, 1);
     }
 
+    ObjectLifetime lifetime_;
     Allocator alloc_;
     IntrusiveList<T> pool_list_;
     Synchronization sync_;
 };
 
-template <ListItem T, typename Allocator = std::allocator<T>>
-using SynchronizedPool = Pool<T, Allocator, MutexPoolSynchronization>;
+template <ListItem T,
+          typename ObjectLifetime = DefaultObjectLifetime<T>,
+          typename Allocator = std::allocator<T>>
+using SynchronizedPool =
+    Pool<T, ObjectLifetime, Allocator, MutexPoolSynchronization>;
 
 template <typename List, typename Pool>
 struct ReturnToPoolGuard

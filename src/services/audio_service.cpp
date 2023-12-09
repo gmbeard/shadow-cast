@@ -246,6 +246,7 @@ AudioService::AudioService(SampleFormat sample_format,
     , sample_rate_ { sample_rate }
     , frame_size_ { frame_size } // clang-format off
     SC_METRICS_MEMBER_USE(metrics_service, metrics_service_)
+    SC_METRICS_MEMBER_USE(0, metrics_start_time_)
 // clang-format on
 {
 #ifdef SHADOW_CAST_ENABLE_METRICS
@@ -265,7 +266,7 @@ auto AudioService::chunk_pool() noexcept -> SynchronizedPool<MediaChunk>&
 
 auto AudioService::on_init(ReadinessRegister reg) -> void
 {
-    reg(FrameTimeRatio(1, 2), &dispatch_chunks);
+    reg(FrameTimeRatio(1), &dispatch_chunks);
 
     loop_data_ = {};
     loop_data_.service = this;
