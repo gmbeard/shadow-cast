@@ -1,3 +1,14 @@
+## 0.7.0
+### MINOR Changes:
+- Improves encoding performance by using a dedicated thread
+- Adds a build-time option to enable frame time metric collection
+- Reduces frame "jitter" when capturing certain games in X11
+- Enables LTO when supported by compiler/linker
+
+### PATCH Changes:
+- Fixes an issue that was causing builds to fail on musl platforms (#24)
+- Fixes a memory leak in H/W encoding pipeline
+
 ## 0.6.3
 ### PATCH Changes:
 - Fixes an issue where the build would fail if `cppcheck` executable wasn't available
