@@ -1,8 +1,10 @@
 #include "utils/cmd_line.hpp"
 #include "config.hpp"
+#include "error.hpp"
 #include <array>
 #include <cassert>
 #include <charconv>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
@@ -24,6 +26,46 @@ requires(sizeof...(T) <= std::tuple_size<Container>::value) &&
         ((std::is_convertible_v<T, std::string_view>) && ...)
 {
     return { std::string_view { vals }... };
+}
+
+auto get_resolution(std::string_view param, sc::CaptureResolution& res) noexcept
+    -> bool
+{
+    std::uint32_t w { 0 }, h;
+    auto pos = std::find(param.begin(), param.end(), 'x');
+    if (pos != param.end()) {
+        if (auto result = std::from_chars(param.data(), &*pos++, w);
+            result.ec != std::errc {})
+            return false;
+    }
+    else {
+        pos = param.begin();
+    }
+
+    if (auto result = std::from_chars(&*pos, param.data() + param.size(), h);
+        result.ec != std::errc {})
+        return false;
+
+    if (w == 0) {
+        auto tmp = static_cast<float>(h) * (16.0f / 9.0f);
+        w = static_cast<decltype(w)>(tmp);
+    }
+
+    res = sc::CaptureResolution { w, h };
+
+    return true;
+}
+
+auto quality_string_value_to_enum_value(std::string_view val) noexcept
+    -> sc::CaptureQuality
+{
+    if (val == "low")
+        return sc::CaptureQuality::low;
+
+    if (val == "medium")
+        return sc::CaptureQuality::medium;
+
+    return sc::CaptureQuality::high;
 }
 
 sc::CmdLineOptionSpec const cmd_line_spec[] = {
@@ -57,6 +99,34 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .validation = sc::no_validation,
         .description = "Show usage",
     },
+
+    /* Show help...
+     */
+    {
+        .short_name = 'q',
+        .long_name = "--quality",
+        .option = sc::CmdLineOption::quality,
+        .flags = sc::cmdline::VALUE_REQUIRED,
+        .validation = construct<sc::AcceptableValues>("low", "medium", "high"),
+        .description =
+            "Capture quality. Accepted values are 'low', 'medium', or 'high'. "
+            "Default 'high'",
+    },
+
+    /* Capture resolution...
+     */
+    { .short_name = 'r',
+      .long_name = "--resolution",
+      .option = sc::CmdLineOption::resolution,
+      .flags = sc::cmdline::VALUE_REQUIRED,
+      .validation =
+          [](std::string_view param) {
+              sc::CaptureResolution res;
+              return get_resolution(param, res);
+          },
+      .description = "Capture resolution in the format [<WIDTH>x]<HEIGHT>. "
+                     "E.g. 1920x1080. If ony HEIGHT is given then WIDTH will "
+                     "be calculated based on a 16:9 aspect ratio" },
 
     /* Sample rate...
      */
@@ -132,6 +202,23 @@ struct Validator
             throw std::runtime_error {
                 "Option value not in acceptable range: "s + std::string { val }
             };
+    }
+
+    auto operator()(auto (*f)(std::string_view)->bool) const -> void
+    {
+
+        bool result;
+        if constexpr (std::is_convertible_v<T, char const*>) {
+            result = f(std::string_view { val, std::strlen(val) });
+        }
+        else {
+            result = f(val);
+        }
+
+        if (!result) {
+            throw std::runtime_error { "Option value not valid: "s +
+                                       std::string { val } };
+        }
     }
 
     auto operator()(sc::NoValidation) const noexcept -> void
@@ -359,8 +446,20 @@ auto get_parameters(CmdLine const& cmdline) noexcept
             sc::CmdLineOption::frame_rate, 60, sc::number_value)),
         .sample_rate = cmdline.get_option_value_or_default(
             sc::CmdLineOption::sample_rate, 48'000, sc::number_value),
-        .output_file = cmdline.args().size() ? cmdline.args()[0] : ""
+        .output_file = cmdline.args().size() ? cmdline.args()[0] : "",
+        .quality = quality_string_value_to_enum_value(
+            cmdline.get_option_value_or_default(sc::CmdLineOption::quality,
+                                                "high")),
     };
+
+    if (cmdline.has_option(CmdLineOption::resolution)) {
+        CaptureResolution res;
+        if (!get_resolution(cmdline.get_option_value(CmdLineOption::resolution),
+                            res))
+            return CmdLineError { CmdLineError::error,
+                                  "Invalid parameter: resolution" };
+        params.resolution = res;
+    }
 
     if (!params.output_file.size())
         return CmdLineError { CmdLineError::error,

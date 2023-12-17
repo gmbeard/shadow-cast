@@ -5,9 +5,11 @@
 #include "./nvidia/cuda.hpp"
 #include "./utils.hpp"
 #include "error.hpp"
+#include "utils/cmd_line.hpp"
 #include <array>
 #include <cinttypes>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 namespace sc
@@ -64,7 +66,9 @@ auto load_nvfbc() -> NvFBCLib;
 
 auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                   NvFBC nvfbc,
-                                  FrameTime const&) -> void;
+                                  FrameTime const&,
+                                  std::optional<CaptureResolution> const&)
+    -> void;
 auto destroy_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                    NvFBC nvfbc) -> void;
 } // namespace sc

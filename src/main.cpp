@@ -359,12 +359,18 @@ auto create_video_encoder_pipeline(
             .height = static_cast<decltype(std::declval<sc::VideoOutputSize>()
                                                .height)>(output_height)
         };
+
+        if (params.resolution) {
+            size.width = params.resolution->width;
+            size.height = params.resolution->height;
+        }
+
         return sc::create_video_encoder(params.video_encoder.c_str(),
                                         nv_gpu.cuda_ctx.get(),
                                         buffer_pool.get(),
                                         size,
-                                        params.frame_time,
-                                        AV_PIX_FMT_BGR0);
+                                        AV_PIX_FMT_BGR0,
+                                        params);
     };
 
     auto const wayland_nvidia =
@@ -376,8 +382,8 @@ auto create_video_encoder_pipeline(
             nullptr,
             { .width = env.platform->output_width,
               .height = env.platform->output_height },
-            params.frame_time,
-            AV_PIX_FMT_BGR0);
+            AV_PIX_FMT_BGR0,
+            params);
     };
 
     auto video_encoder_context =

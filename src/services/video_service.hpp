@@ -1,6 +1,7 @@
 #ifndef SHADOW_CAST_VIDEO_SERVICE_HPP_INCLUDED
 #define SHADOW_CAST_VIDEO_SERVICE_HPP_INCLUDED
 
+#include "av/codec.hpp"
 #include "config.hpp"
 
 #ifdef SHADOW_CAST_ENABLE_METRICS

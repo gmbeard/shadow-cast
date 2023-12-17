@@ -8,6 +8,7 @@
 #include <array>
 #include <cinttypes>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -35,9 +36,24 @@ enum class CmdLineOption
     audio_encoder,
     frame_rate,
     help,
-    video_encoder,
-    version,
+    quality,
+    resolution,
     sample_rate,
+    version,
+    video_encoder,
+};
+
+enum class CaptureQuality
+{
+    low,
+    medium,
+    high
+};
+
+struct CaptureResolution
+{
+    std::uint32_t width { 0 };
+    std::uint32_t height { 0 };
 };
 
 struct Parameters
@@ -48,6 +64,8 @@ struct Parameters
     std::int32_t sample_rate;
     std::string output_file;
     bool strict_frame_time { true };
+    std::optional<CaptureResolution> resolution { std::nullopt };
+    CaptureQuality quality { CaptureQuality::high };
 };
 
 struct NoValidation
@@ -57,7 +75,10 @@ struct NoValidation
 
 using AcceptableValues = std::array<std::string_view, 16>;
 using ValidRange = std::tuple<std::int32_t, std::int32_t>;
-using Validation = std::variant<AcceptableValues, ValidRange, NoValidation>;
+using Validation = std::variant<AcceptableValues,
+                                ValidRange,
+                                NoValidation,
+                                auto (*)(std::string_view)->bool>;
 
 enum class CmdLineOptionArgument
 {

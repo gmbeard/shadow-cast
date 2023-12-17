@@ -28,8 +28,10 @@ auto select_capture(Parameters const& params,
         auto nvfbclib = load_nvfbc();
         auto nvfbc_instance = nvfbclib.NvFBCCreateInstance();
         auto nvfbc_session = sc::create_nvfbc_session(nvfbc_instance);
-        create_nvfbc_capture_session(
-            nvfbc_session.get(), nvfbc_instance, params.frame_time);
+        create_nvfbc_capture_session(nvfbc_session.get(),
+                                     nvfbc_instance,
+                                     params.frame_time,
+                                     params.resolution);
 
         return NvFBCCapture { std::move(nvfbclib),
                               std::move(nvfbc_instance),

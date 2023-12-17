@@ -1,6 +1,7 @@
 #include "nvidia.hpp"
 #include "nvidia/cuda.hpp"
 #include "utils/base64.hpp"
+#include "utils/cmd_line.hpp"
 #include "utils/frame_time.hpp"
 #include "utils/symbol.hpp"
 #include <dlfcn.h>
@@ -144,9 +145,11 @@ auto create_nvfbc_session(sc::NvFBC instance) -> sc::NvFBCSessionHandlePtr
     return sc::NvFBCSessionHandlePtr { fbc_handle, instance };
 }
 
-auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
-                                  NvFBC nvfbc,
-                                  FrameTime const& frame_time) -> void
+auto create_nvfbc_capture_session(
+    NVFBC_SESSION_HANDLE nvfbc_handle,
+    NvFBC nvfbc,
+    FrameTime const& frame_time,
+    std::optional<CaptureResolution> const& resolution) -> void
 {
     NVFBC_CREATE_CAPTURE_SESSION_PARAMS create_capture_params {};
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
@@ -156,6 +159,10 @@ auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
     create_capture_params.dwSamplingRateMs = frame_time.value_in_milliseconds();
     create_capture_params.bAllowDirectCapture = NVFBC_FALSE;
     create_capture_params.bPushModel = NVFBC_FALSE;
+    if (resolution) {
+        create_capture_params.frameSize.w = resolution->width;
+        create_capture_params.frameSize.h = resolution->height;
+    }
 
     if (nvfbc.nvFBCCreateCaptureSession(nvfbc_handle, &create_capture_params) !=
         NVFBC_SUCCESS)

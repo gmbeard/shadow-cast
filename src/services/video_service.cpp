@@ -1,6 +1,8 @@
 #include "services/video_service.hpp"
+#include "av/codec.hpp"
 #include "nvidia/NvFBC.h"
 #include "utils/contracts.hpp"
+#include <optional>
 
 #ifdef SHADOW_CAST_ENABLE_METRICS
 #include "utils/elapsed.hpp"

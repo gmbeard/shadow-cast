@@ -2,10 +2,11 @@
 #include "av/buffer.hpp"
 #include "error.hpp"
 #include "nvidia.hpp"
+#include "utils/cmd_line.hpp"
 #include <X11/Xlib.h>
-#include <libavutil/rational.h>
 extern "C" {
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/rational.h>
 }
 
 namespace sc
@@ -19,8 +20,8 @@ auto create_video_encoder(std::string const& encoder_name,
                           CUcontext cuda_ctx,
                           AVBufferPool* pool,
                           VideoOutputSize size,
-                          FrameTime const& ft,
-                          AVPixelFormat pixel_format) -> sc::CodecContextPtr
+                          AVPixelFormat pixel_format,
+                          Parameters const& app_params) -> sc::CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
         encoder_name.c_str()) };
@@ -31,14 +32,13 @@ auto create_video_encoder(std::string const& encoder_name,
     sc::CodecContextPtr video_encoder_context { avcodec_alloc_context3(
         video_encoder.get()) };
     video_encoder_context->codec_id = video_encoder->id;
-    auto const timebase = AVRational { 1, static_cast<int>(ft.fps()) };
+    auto const timebase =
+        AVRational { 1, static_cast<int>(app_params.frame_time.fps()) };
     video_encoder_context->time_base = timebase;
     video_encoder_context->framerate =
         AVRational { timebase.den, timebase.num };
     video_encoder_context->sample_aspect_ratio = AVRational { 0, 1 };
-    video_encoder_context->max_b_frames = 0;
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
-    video_encoder_context->bit_rate = 10'000'000;
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     video_encoder_context->width = size.width;
     video_encoder_context->height = size.height;
@@ -81,8 +81,26 @@ auto create_video_encoder(std::string const& encoder_name,
     video_encoder_context->hw_frames_ctx = av_buffer_ref(frame_context.get());
 
     AVDictionary* options = nullptr;
-    av_dict_set_int(&options, "qp", 21, 0);
-    av_dict_set(&options, "preset", "p5", 0);
+
+    video_encoder_context->max_b_frames = 0;
+
+    switch (app_params.quality) {
+    case CaptureQuality::low:
+        av_dict_set(&options, "preset", "p3", 0);
+        av_dict_set_int(&options, "qp", 35, 0);
+        av_dict_set(&options, "tune", "ll", 0);
+        break;
+    case CaptureQuality::medium:
+        av_dict_set(&options, "preset", "p4", 0);
+        av_dict_set_int(&options, "qp", 27, 0);
+        av_dict_set(&options, "tune", "hq", 0);
+        break;
+    case CaptureQuality::high:
+        av_dict_set(&options, "preset", "p5", 0);
+        av_dict_set_int(&options, "qp", 21, 0);
+        av_dict_set(&options, "tune", "hq", 0);
+        break;
+    }
 
     if (auto const ret = avcodec_open2(
             video_encoder_context.get(), video_encoder.get(), &options);
