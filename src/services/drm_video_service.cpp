@@ -105,10 +105,10 @@ namespace sc
 DRMVideoService::DRMVideoService(
     NvCuda nvcuda,
     CUcontext cuda_ctx,
-    EGL& egl,
-    Wayland& wayland,
-    WaylandEGL& plaform_egl SC_METRICS_PARAM_DEFINE(MetricsService*,
-                                                    metrics_service)) noexcept
+    EGL const& egl,
+    Wayland const& wayland,
+    WaylandEGL const& plaform_egl
+        SC_METRICS_PARAM_DEFINE(MetricsService*, metrics_service)) noexcept
     : nvcuda_ { nvcuda }
     , cuda_ctx_ { cuda_ctx }
     , egl_ { &egl }

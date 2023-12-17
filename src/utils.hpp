@@ -9,6 +9,7 @@
 #include "./utils/frame_time.hpp"
 #include "./utils/intrusive_list.hpp"
 #include "./utils/non_pointer.hpp"
+#include "./utils/overloads.hpp"
 #include "./utils/pool.hpp"
 #include "./utils/receiver.hpp"
 #include "./utils/result.hpp"

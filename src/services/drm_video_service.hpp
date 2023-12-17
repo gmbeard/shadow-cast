@@ -30,12 +30,13 @@ struct DRMVideoService final : Service
     using CaptureFrameReceiverType =
         Receiver<void(CUarray, NvCuda const&, std::uint64_t)>;
 
-    explicit DRMVideoService(NvCuda nvcuda,
-                             CUcontext cuda_ctx,
-                             EGL& egl,
-                             Wayland& wayland,
-                             WaylandEGL& platform_egl SC_METRICS_PARAM_DECLARE(
-                                 MetricsService*)) noexcept;
+    explicit DRMVideoService(
+        NvCuda nvcuda,
+        CUcontext cuda_ctx,
+        EGL const& egl,
+        Wayland const& wayland,
+        WaylandEGL const& platform_egl
+            SC_METRICS_PARAM_DECLARE(MetricsService*)) noexcept;
 
     template <typename F>
     auto set_capture_frame_handler(F&& handler) -> void
@@ -53,9 +54,9 @@ private:
 private:
     NvCuda nvcuda_;
     CUcontext cuda_ctx_;
-    BorrowedPtr<EGL> egl_;
-    BorrowedPtr<Wayland> wayland_;
-    BorrowedPtr<WaylandEGL> platform_egl_;
+    BorrowedPtr<EGL const> egl_;
+    BorrowedPtr<Wayland const> wayland_;
+    BorrowedPtr<WaylandEGL const> platform_egl_;
     UnixSocket drm_socket_;
     Process drm_process_;
     sigset_t drm_proc_mask_;

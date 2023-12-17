@@ -3,6 +3,7 @@
 #include "error.hpp"
 #include "nvidia.hpp"
 #include <X11/Xlib.h>
+#include <libavutil/rational.h>
 extern "C" {
 #include <libavutil/hwcontext_cuda.h>
 }
@@ -30,15 +31,14 @@ auto create_video_encoder(std::string const& encoder_name,
     sc::CodecContextPtr video_encoder_context { avcodec_alloc_context3(
         video_encoder.get()) };
     video_encoder_context->codec_id = video_encoder->id;
-    auto const timebase = ft.per_second_ratio();
+    auto const timebase = AVRational { 1, static_cast<int>(ft.fps()) };
     video_encoder_context->time_base = timebase;
-    video_encoder_context->framerate.num = timebase.den;
-    video_encoder_context->framerate.den = timebase.num;
-    video_encoder_context->sample_aspect_ratio.num = 0;
-    video_encoder_context->sample_aspect_ratio.den = 0;
+    video_encoder_context->framerate =
+        AVRational { timebase.den, timebase.num };
+    video_encoder_context->sample_aspect_ratio = AVRational { 0, 1 };
     video_encoder_context->max_b_frames = 0;
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
-    video_encoder_context->bit_rate = 100'000;
+    video_encoder_context->bit_rate = 10'000'000;
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     video_encoder_context->width = size.width;
     video_encoder_context->height = size.height;

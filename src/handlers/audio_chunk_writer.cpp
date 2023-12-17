@@ -4,6 +4,7 @@
 #include "config.hpp"
 #include "error.hpp"
 #include "services/encoder.hpp"
+#include "utils/contracts.hpp"
 #include <algorithm>
 #include <cassert>
 #include <memory>
@@ -25,7 +26,8 @@ ChunkWriter::ChunkWriter(AVCodecContext* codec_context,
 
 auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
 {
-    assert(static_cast<int>(chunk.sample_count) == codec_context_->frame_size);
+    SC_EXPECT(static_cast<int>(chunk.sample_count) ==
+              codec_context_->frame_size);
     sc::SampleFormat const sample_format =
         sc::convert_from_libav_format(codec_context_->sample_fmt);
 

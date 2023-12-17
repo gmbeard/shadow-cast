@@ -29,7 +29,10 @@ add_library(shadow-cast-obj
     io/signals.cpp
     io/unix_socket.cpp
 
+    platform/capture.cpp
+    platform/display.cpp
     platform/egl.cpp
+    platform/gpu.cpp
     platform/wayland.cpp
 
     services/audio_service.cpp

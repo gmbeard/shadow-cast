@@ -5,6 +5,7 @@
 #include <cstring>
 #include <errno.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
 #include <stdexcept>
 #include <sys/eventfd.h>
 #include <unistd.h>
