@@ -76,6 +76,7 @@ target_include_directories(shadow-cast-obj
 
 target_link_libraries(shadow-cast-obj
     PUBLIC
+    Exios::exios
     Pipewire::pipewire
     FFMpeg::avcodec
     FFMpeg::avdevice
@@ -92,15 +93,17 @@ target_link_libraries(shadow-cast-obj
 
 add_subdirectory(glsl)
 
-add_executable(shadow-cast
-   main.cpp
-) 
+if(NOT SHADOW_CAST_ENABLE_EXPERIMENTAL)
+    add_executable(shadow-cast
+       main.cpp
+    ) 
 
-target_link_libraries(shadow-cast
-    PRIVATE
-    embedded_glsl
-    shadow-cast-obj
-)
+    target_link_libraries(shadow-cast
+        PRIVATE
+        embedded_glsl
+        shadow-cast-obj
+    )
+endif()
 
 set(
     SHADOW_CAST_KMS_BINARY_NAME

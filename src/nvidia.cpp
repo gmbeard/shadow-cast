@@ -142,7 +142,7 @@ auto create_nvfbc_session(sc::NvFBC instance) -> sc::NvFBCSessionHandlePtr
     create_params.privateDataSize = (*nvfbc_key_result).size();
     if (instance.nvFBCCreateHandle(&fbc_handle, &create_params) !=
         NVFBC_SUCCESS)
-        throw std::runtime_error { "Couldn't create NvFBC instance" };
+        throw NvFBCError { instance, 0 };
     return sc::NvFBCSessionHandlePtr { fbc_handle, instance };
 }
 
