@@ -17,6 +17,7 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
+include(Dependencies)
 include(CPPCheck)
 include(GNUInstallDirs)
 include(CheckIPOSupported)
@@ -40,6 +41,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-O0)
 endif()
 
+find_package(Exios REQUIRED)
 find_package(Pipewire REQUIRED)
 find_package(
     FFMpeg REQUIRED
@@ -79,6 +81,12 @@ option(
     OFF
 )
 
+option(
+    SHADOW_CAST_ENABLE_EXPERIMENTAL
+    "Enable experimental build for ${PROJECT_NAME}"
+    OFF
+)
+
 if (SHADOW_CAST_ENABLE_ASAN)
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)
@@ -90,6 +98,9 @@ if (SHADOW_CAST_ENABLE_TSAN)
 endif()
 
 add_subdirectory(src)
+if(SHADOW_CAST_ENABLE_EXPERIMENTAL)
+    add_subdirectory(experimental)
+endif()
 
 if(SHADOW_CAST_ENABLE_TESTS)
     enable_testing()
@@ -106,7 +117,14 @@ configure_file(
     @ONLY
 )
 
-install(
-    TARGETS shadow-cast shadow-cast-kms
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+if(NOT SHADOW_CAST_ENABLE_EXPERIMENTAL)
+    install(
+        TARGETS shadow-cast shadow-cast-kms
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+else()
+    install(
+        TARGETS shadowcast shadow-cast-kms
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()

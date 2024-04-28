@@ -1,0 +1,32 @@
+add_executable(shadowcast)
+target_sources(
+    shadowcast
+    PUBLIC
+        cuda.cpp
+        main.cpp
+        media_container.cpp
+        nvfbc.cpp
+        nvfbc_capture.cpp
+        nvfbc_gpu.cpp
+        sticky_cancel_timer.cpp
+        x11_desktop.cpp
+)
+
+target_link_libraries(
+    shadowcast
+    PUBLIC
+    shadow-cast-obj
+    Exios::exios
+    Pipewire::pipewire
+    FFMpeg::avcodec
+    FFMpeg::avdevice
+    FFMpeg::avfilter
+    FFMpeg::avformat
+    FFMpeg::avutil
+    FFMpeg::swresample
+    FFMpeg::swscale
+    pthread
+    X11::X11
+    wayland-client
+    wayland-egl
+)

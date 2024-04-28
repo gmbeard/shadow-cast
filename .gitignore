@@ -1,6 +1,6 @@
 build/
 .cache/
 .private/
-experimental/
 dist/
 report/
+deps/
