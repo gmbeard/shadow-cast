@@ -40,6 +40,7 @@ MediaContainer::~MediaContainer()
 {
     if (open_) {
         SC_EXPECT(ctx_);
+        // cppcheck-suppress [nullPointerRedundantCheck]
         avio_close(ctx_->pb);
     }
 }
@@ -63,6 +64,7 @@ auto MediaContainer::write_frame(AVFrame* frame, AVCodecContext* codec) -> void
 
     SC_EXPECT(stream_pos != streams.end());
 
+    // cppcheck-suppress [derefInvalidIteratorRedundantCheck]
     send_frame(frame, codec, ctx_.get(), *stream_pos, packet_.get());
     av_frame_unref(frame);
 }

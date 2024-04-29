@@ -23,6 +23,7 @@ EncoderService::EncoderService(
         SC_METRICS_PARAM_DEFINE(MetricsService*, metrics_service)) noexcept
     : format_context_ { fmt_context } SC_METRICS_MEMBER_USE(metrics_service,
                                                             metrics_service_)
+          SC_METRICS_MEMBER_USE(0, metrics_start_time_)
     , packet_ { av_packet_alloc() }
 {
 }
