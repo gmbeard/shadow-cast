@@ -5,11 +5,14 @@ target_sources(
         cuda.cpp
         main.cpp
         media_container.cpp
+        nvenc_encoder_sink.cpp
         nvfbc.cpp
         nvfbc_capture.cpp
+        nvfbc_capture_source.cpp
         nvfbc_gpu.cpp
         sticky_cancel_timer.cpp
         x11_desktop.cpp
+        x11_platform.cpp
 )
 
 target_link_libraries(

@@ -10,7 +10,9 @@
 namespace sc
 {
 
-NvFbcGpu::NvFbcGpu(FrameTime const& frame_time)
+NvFbcGpu::NvFbcGpu(FrameTime const& frame_time,
+                   VideoOutputSize dimensions,
+                   std::optional<CaptureResolution> const& override_resolution)
     : cuda_ctx_ { make_cuda_context() }
     , session_ { make_nvfbc_session() }
     , frame_time_ { frame_time }
@@ -21,7 +23,13 @@ NvFbcGpu::NvFbcGpu(FrameTime const& frame_time)
         throw sc::CodecError { "Failed to allocate video buffer pool" };
     }
 
-    create_nvfbc_capture_session(session_.get(), nvfbc(), frame_time_);
+    NVFBC_SIZE size { .w = dimensions.width, .h = dimensions.height };
+    if (override_resolution) {
+        size.w = override_resolution->width;
+        size.h = override_resolution->height;
+    }
+
+    create_nvfbc_capture_session(session_.get(), nvfbc(), frame_time_, size);
 }
 
 auto NvFbcGpu::frame_time() const noexcept -> FrameTime const&
@@ -29,9 +37,12 @@ auto NvFbcGpu::frame_time() const noexcept -> FrameTime const&
     return frame_time_;
 }
 
-auto NvFbcGpu::create_encoder(std::string const& codec_name,
-                              VideoOutputSize const& dimensions)
-    -> CodecContextPtr
+auto NvFbcGpu::create_encoder(
+    std::string const& codec_name,
+    VideoOutputSize const& dimensions,
+    std::optional<CaptureResolution> const& override_dimensions,
+    std::size_t rate,
+    CaptureQuality const& quality) -> CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
         codec_name.c_str()) };
@@ -48,12 +59,26 @@ auto NvFbcGpu::create_encoder(std::string const& codec_name,
     video_encoder_context->framerate =
         AVRational { timebase.den, timebase.num };
     video_encoder_context->sample_aspect_ratio = AVRational { 0, 1 };
-    video_encoder_context->max_b_frames = 0;
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
-    video_encoder_context->bit_rate = 100'000;
+    video_encoder_context->bit_rate = rate;
+    if (rate) {
+        video_encoder_context->gop_size = frame_time_.fps() * 2;
+        video_encoder_context->max_b_frames = 2;
+    }
+    else {
+        video_encoder_context->max_b_frames = 0;
+    }
+
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    video_encoder_context->width = dimensions.width;
-    video_encoder_context->height = dimensions.height;
+
+    if (override_dimensions) {
+        video_encoder_context->width = override_dimensions->width;
+        video_encoder_context->height = override_dimensions->height;
+    }
+    else {
+        video_encoder_context->width = dimensions.width;
+        video_encoder_context->height = dimensions.height;
+    }
 
     sc::BufferPtr device_ctx { av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA) };
     if (!device_ctx) {
@@ -82,7 +107,7 @@ auto NvFbcGpu::create_encoder(std::string const& codec_name,
     hw_frame_context->sw_format = AV_PIX_FMT_BGR0;
     hw_frame_context->format = video_encoder_context->pix_fmt;
 
-    hw_frame_context->pool = buffer_pool_.get();
+    hw_frame_context->pool = nullptr; // buffer_pool_.get();
     hw_frame_context->initial_pool_size = 1;
 
     if (auto const ret = av_hwframe_ctx_init(frame_context.get()); ret < 0) {
@@ -93,8 +118,32 @@ auto NvFbcGpu::create_encoder(std::string const& codec_name,
     video_encoder_context->hw_frames_ctx = av_buffer_ref(frame_context.get());
 
     AVDictionary* options = nullptr;
-    av_dict_set_int(&options, "qp", 21, 0);
     av_dict_set(&options, "preset", "p5", 0);
+    av_dict_set(&options, "coder", "cabac", 0);
+    if (rate == 0) {
+        int qp = 0;
+        av_dict_set(&options, "rc", "constqp", 0);
+        switch (quality) {
+        case sc::CaptureQuality::low:
+            qp = 40;
+            break;
+        case sc::CaptureQuality::medium:
+            qp = 32;
+            break;
+        case sc::CaptureQuality::high:
+            qp = 26;
+            break;
+        }
+
+        if (video_encoder->id == AV_CODEC_ID_H264)
+            qp -= 2;
+
+        av_dict_set_int(&options, "qp", qp, 0);
+    }
+    else {
+        av_dict_set(&options, "rc", "cbr", 0);
+        av_dict_set_int(&options, "strict_gop", 1, 0);
+    }
 
     if (auto const ret = avcodec_open2(
             video_encoder_context.get(), video_encoder.get(), &options);

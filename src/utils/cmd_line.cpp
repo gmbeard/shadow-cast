@@ -1,8 +1,10 @@
 #include "utils/cmd_line.hpp"
 #include "config.hpp"
+#include "error.hpp"
 #include <array>
 #include <cassert>
 #include <charconv>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
@@ -26,6 +28,92 @@ requires(sizeof...(T) <= std::tuple_size<Container>::value) &&
     return { std::string_view { vals }... };
 }
 
+auto get_resolution(std::string_view param, sc::CaptureResolution& res) noexcept
+    -> bool
+{
+    std::uint32_t w { 0 }, h;
+    auto pos = std::find(param.begin(), param.end(), 'x');
+    if (pos != param.end()) {
+        if (auto result = std::from_chars(param.data(), &*pos++, w);
+            result.ec != std::errc {})
+            return false;
+    }
+    else {
+        pos = param.begin();
+    }
+
+    if (auto result = std::from_chars(&*pos, param.data() + param.size(), h);
+        result.ec != std::errc {})
+        return false;
+
+    if (w == 0) {
+        auto tmp = static_cast<float>(h) * (16.0f / 9.0f);
+        w = static_cast<decltype(w)>(tmp);
+    }
+
+    res = sc::CaptureResolution { w, h };
+
+    return true;
+}
+
+auto quality_string_value_to_enum_value(std::string_view val) noexcept
+    -> sc::CaptureQuality
+{
+    if (val == "low")
+        return sc::CaptureQuality::low;
+
+    if (val == "medium")
+        return sc::CaptureQuality::medium;
+
+    return sc::CaptureQuality::high;
+}
+
+template <typename T>
+auto safe_multiply(T& source, T mult) noexcept -> bool
+{
+    if ((std::numeric_limits<T>::max() / mult) < source)
+        return false;
+
+    source *= mult;
+    return true;
+}
+
+auto get_bitrate(std::string_view val, std::size_t& bitrate) noexcept -> bool
+{
+    static_cast<void>(val);
+    static_cast<void>(bitrate);
+
+    auto numbers_end = std::find_if(val.begin(), val.end(), [](auto const& c) {
+        return c < '0' || c > '9';
+    });
+
+    if (auto result = std::from_chars(
+            val.data(), val.data() + (numbers_end - val.begin()), bitrate);
+        result.ec != std::errc {})
+        return false;
+
+    if (numbers_end != val.end()) {
+        char const unit = *numbers_end;
+        switch (unit) {
+        case 'm':
+        case 'M':
+            safe_multiply(bitrate, 1'000'000lu);
+            break;
+        case 'k':
+        case 'K':
+            safe_multiply(bitrate, 1'000lu);
+            break;
+        default:
+            return false;
+        }
+
+        if (std::next(numbers_end) != val.end())
+            return false;
+    }
+
+    return true;
+}
+
 sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* Audio encoder...
      */
@@ -36,13 +124,26 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
       .validation = sc::no_validation,
       .description = "The audio encoder to use. Default 'libopus'" },
 
+    /* Bit rate...
+     */
+    { .short_name = 'b',
+      .long_name = "--bitrate",
+      .option = sc::CmdLineOption::bit_rate,
+      .flags = sc::cmdline::VALUE_REQUIRED,
+      .validation =
+          [](std::string_view val) {
+              std::size_t bitrate;
+              return get_bitrate(val, bitrate);
+          },
+      .description = "The video bitrate. This implies constant rate mode." },
+
     /* Frame rate...
      */
     { .short_name = 'f',
       .long_name = "--framerate",
       .option = sc::CmdLineOption::frame_rate,
-      .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
-      .validation = sc::ValidRange { 20, 70 },
+      .flags = sc::cmdline::VALUE_NUMERIC,
+      .validation = sc::no_validation,
       .description =
           "Video frame rate in frames-per-second. Must be between 20 - 70. "
           "Default 60" },
@@ -57,6 +158,34 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .validation = sc::no_validation,
         .description = "Show usage",
     },
+
+    /* Show help...
+     */
+    {
+        .short_name = 'q',
+        .long_name = "--quality",
+        .option = sc::CmdLineOption::quality,
+        .flags = sc::cmdline::VALUE_REQUIRED,
+        .validation = construct<sc::AcceptableValues>("low", "medium", "high"),
+        .description =
+            "Capture quality. Accepted values are 'low', 'medium', or 'high'. "
+            "Default 'high'. This implies constant quality mode.",
+    },
+
+    /* Capture resolution...
+     */
+    { .short_name = 'r',
+      .long_name = "--resolution",
+      .option = sc::CmdLineOption::resolution,
+      .flags = sc::cmdline::VALUE_REQUIRED,
+      .validation =
+          [](std::string_view param) {
+              sc::CaptureResolution res;
+              return get_resolution(param, res);
+          },
+      .description = "Capture resolution in the format [<WIDTH>x]<HEIGHT>. "
+                     "E.g. 1920x1080. If ony HEIGHT is given then WIDTH will "
+                     "be calculated based on a 16:9 aspect ratio" },
 
     /* Sample rate...
      */
@@ -132,6 +261,23 @@ struct Validator
             throw std::runtime_error {
                 "Option value not in acceptable range: "s + std::string { val }
             };
+    }
+
+    auto operator()(auto (*f)(std::string_view)->bool) const -> void
+    {
+
+        bool result;
+        if constexpr (std::is_convertible_v<T, char const*>) {
+            result = f(std::string_view { val, std::strlen(val) });
+        }
+        else {
+            result = f(val);
+        }
+
+        if (!result) {
+            throw std::runtime_error { "Option value not valid: "s +
+                                       std::string { val } };
+        }
     }
 
     auto operator()(sc::NoValidation) const noexcept -> void
@@ -359,8 +505,36 @@ auto get_parameters(CmdLine const& cmdline) noexcept
             sc::CmdLineOption::frame_rate, 60, sc::number_value)),
         .sample_rate = cmdline.get_option_value_or_default(
             sc::CmdLineOption::sample_rate, 48'000, sc::number_value),
-        .output_file = cmdline.args().size() ? cmdline.args()[0] : ""
+        .output_file = cmdline.args().size() ? cmdline.args()[0] : "",
+        .quality = quality_string_value_to_enum_value(
+            cmdline.get_option_value_or_default(sc::CmdLineOption::quality,
+                                                "high")),
     };
+
+    if (cmdline.has_option(CmdLineOption::resolution)) {
+        CaptureResolution res;
+        if (!get_resolution(cmdline.get_option_value(CmdLineOption::resolution),
+                            res))
+            return CmdLineError { CmdLineError::error,
+                                  "Invalid parameter: resolution" };
+        params.resolution = res;
+    }
+
+    if (cmdline.has_option(CmdLineOption::bit_rate)) {
+        if (cmdline.has_option(CmdLineOption::quality))
+            return CmdLineError {
+                CmdLineError::error,
+                "You cannot specify both quality and bitrate together"
+            };
+
+        std::size_t bitrate;
+        if (!get_bitrate(cmdline.get_option_value(CmdLineOption::bit_rate),
+                         bitrate))
+            return CmdLineError { CmdLineError::error,
+                                  "Invalid parameter: bitrate" };
+
+        params.bitrate = bitrate;
+    }
 
     if (!params.output_file.size())
         return CmdLineError { CmdLineError::error,

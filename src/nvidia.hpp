@@ -8,6 +8,7 @@
 #include <array>
 #include <cinttypes>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 namespace sc
@@ -64,7 +65,9 @@ auto load_nvfbc() -> NvFBCLib;
 
 auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                   NvFBC nvfbc,
-                                  FrameTime const&) -> void;
+                                  FrameTime const&,
+                                  std::optional<NVFBC_SIZE> = std::nullopt)
+    -> void;
 auto destroy_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                    NvFBC nvfbc) -> void;
 } // namespace sc
