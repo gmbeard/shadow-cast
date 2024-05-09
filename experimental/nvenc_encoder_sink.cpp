@@ -1,0 +1,189 @@
+#include "./nvenc_encoder_sink.hpp"
+#include "av/buffer.hpp"
+#include "av/codec.hpp"
+#include "cuda.hpp"
+#include "utils/cmd_line.hpp"
+#include <libavutil/hwcontext_cuda.h>
+
+namespace
+{
+
+/**
+ * Creates the encoding context
+ *
+ * There are two modes of operation:
+ * - Constant rate
+ * - Constant quality
+ *
+ * Constant rate mode is determined by `params.rate > 0`. In this mode we insert
+ * 2 B-frames either side of every P frame (i.e. `IBBPBBPBBPBB...`), and insert
+ * an I-frame every 2 seconds (GOP size = FPS * 2). The implication of using
+ * this mode is that it is for live streaming purposes. Streaming services
+ * typically prefer this, and put upper limits on the bit rate.
+ *
+ * If `params.rate == 0` then this select CQ mode. There are 3 quality settings
+ * in this mode: low, medium, and high (high being the default). This mode
+ * implies a variable bit rate operation. The underlying quality setting sent to
+ * NVENC is slightly adjusted upwards when using h264 (confusingly, the value is
+ * lower == better for NVENC), meaning file sizes for this format will be
+ * slightly higher. I think this is generally accepted.
+ *
+ * Both these modes use NVENC's `P5` preset.
+ */
+auto create_encoder_context(sc::Parameters const& params,
+                            sc::VideoOutputSize desktop_resolution,
+                            CUcontext cuda_context) -> sc::CodecContextPtr
+{
+    // TODO:
+    sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
+        params.video_encoder.c_str()) };
+    if (!video_encoder) {
+        throw sc::CodecError { "Failed to find required video codec" };
+    }
+
+    sc::CodecContextPtr video_encoder_context { avcodec_alloc_context3(
+        video_encoder.get()) };
+    video_encoder_context->codec_id = video_encoder->id;
+    auto const timebase =
+        AVRational { .num = 1,
+                     .den = static_cast<int>(params.frame_time.fps()) };
+    video_encoder_context->time_base = timebase;
+    video_encoder_context->framerate =
+        AVRational { timebase.den, timebase.num };
+    video_encoder_context->sample_aspect_ratio = AVRational { 0, 1 };
+    video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
+    video_encoder_context->bit_rate = params.bitrate;
+    if (params.bitrate) {
+        video_encoder_context->max_b_frames = 2;
+        video_encoder_context->gop_size = params.frame_time.fps() * 2;
+    }
+
+    video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+    if (params.resolution) {
+        video_encoder_context->width = params.resolution->width;
+        video_encoder_context->height = params.resolution->height;
+    }
+    else {
+
+        video_encoder_context->width = desktop_resolution.width;
+        video_encoder_context->height = desktop_resolution.height;
+    }
+
+    sc::BufferPtr device_ctx { av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA) };
+    if (!device_ctx) {
+        throw std::runtime_error { "Failed to allocate H/W device context" };
+    }
+
+    AVHWDeviceContext* hw_device_context =
+        reinterpret_cast<AVHWDeviceContext*>(device_ctx->data);
+    AVCUDADeviceContext* cuda_device_context =
+        reinterpret_cast<AVCUDADeviceContext*>(hw_device_context->hwctx);
+
+    // NOTE: Do we actually _need_ to supply our own CUDA context here,
+    //  or will libav create one for us?
+    cuda_device_context->cuda_ctx = cuda_context;
+
+    if (auto const ret = av_hwdevice_ctx_init(device_ctx.get()); ret < 0) {
+        throw std::runtime_error { "Failed to initialize H/W device context: " +
+                                   sc::av_error_to_string(ret) };
+    }
+
+    sc::BufferPtr frame_context { av_hwframe_ctx_alloc(device_ctx.get()) };
+    if (!frame_context) {
+        throw std::runtime_error { "Failed to allocate H/W frame context" };
+    }
+
+    AVHWFramesContext* hw_frame_context =
+        reinterpret_cast<AVHWFramesContext*>(frame_context->data);
+    hw_frame_context->width = video_encoder_context->width;
+    hw_frame_context->height = video_encoder_context->height;
+    hw_frame_context->sw_format = AV_PIX_FMT_BGR0;
+    hw_frame_context->format = video_encoder_context->pix_fmt;
+
+    hw_frame_context->pool = nullptr;
+    hw_frame_context->initial_pool_size = 1;
+
+    if (auto const ret = av_hwframe_ctx_init(frame_context.get()); ret < 0) {
+        throw std::runtime_error { "Failed to initialize H/W frame context: " +
+                                   sc::av_error_to_string(ret) };
+    }
+
+    video_encoder_context->hw_frames_ctx = av_buffer_ref(frame_context.get());
+
+    AVDictionary* options = nullptr;
+    av_dict_set(&options, "preset", "p5", 0);
+    av_dict_set(&options, "coder", "cabac", 0);
+    if (params.bitrate == 0) {
+        int qp = 0;
+        av_dict_set(&options, "rc", "constqp", 0);
+        switch (params.quality) {
+        case sc::CaptureQuality::low:
+            qp = 40;
+            break;
+        case sc::CaptureQuality::medium:
+            qp = 32;
+            break;
+        case sc::CaptureQuality::high:
+            qp = 26;
+            break;
+        }
+
+        if (video_encoder->id == AV_CODEC_ID_H264)
+            qp -= 2;
+
+        av_dict_set_int(&options, "qp", qp, 0);
+    }
+    else {
+        av_dict_set(&options, "rc", "cbr", 0);
+    }
+
+    if (auto const ret = avcodec_open2(
+            video_encoder_context.get(), video_encoder.get(), &options);
+        ret < 0) {
+        throw sc::CodecError { "Failed to open video codec: " +
+                               sc::av_error_to_string(ret) };
+    }
+
+    return video_encoder_context;
+}
+
+} // namespace
+
+namespace sc
+{
+NvencEncoderSink::NvencEncoderSink(exios::Context ctx,
+                                   MediaContainer& container,
+                                   Parameters const& params,
+                                   VideoOutputSize desktop_resolution)
+    : ctx_ { ctx }
+    , container_ { container }
+    , cuda_context_ { make_cuda_context() }
+    , encoder_context_ { create_encoder_context(
+          params, desktop_resolution, cuda_context_.get()) }
+    , frame_ { av_frame_alloc() }
+{
+    container_.add_stream(encoder_context_.get());
+}
+
+auto NvencEncoderSink::prepare_input() -> input_type
+{
+    if (auto const r = av_hwframe_get_buffer(
+            encoder_context_->hw_frames_ctx, frame_.get(), 0);
+        r < 0)
+        throw std::runtime_error { "Failed to get H/W frame buffer" };
+
+    frame_->extended_data = frame_->data;
+    frame_->format = encoder_context_->pix_fmt;
+    frame_->width = encoder_context_->width;
+    frame_->height = encoder_context_->height;
+    frame_->color_range = encoder_context_->color_range;
+    frame_->color_primaries = encoder_context_->color_primaries;
+    frame_->color_trc = encoder_context_->color_trc;
+    frame_->colorspace = encoder_context_->colorspace;
+    frame_->chroma_location = encoder_context_->chroma_sample_location;
+
+    return frame_.get();
+}
+
+} // namespace sc

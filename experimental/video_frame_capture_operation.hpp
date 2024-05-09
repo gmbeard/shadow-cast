@@ -1,11 +1,8 @@
 #ifndef SHADOW_CAST_VIDEO_FRAME_CAPTURE_OPERATION_HPP_INCLUDED
 #define SHADOW_CAST_VIDEO_FRAME_CAPTURE_OPERATION_HPP_INCLUDED
 
-#include "exios/alloc_utils.hpp"
 #include "exios/exios.hpp"
-#include "nvidia/cuda.hpp"
 #include <functional>
-#include <iostream>
 #include <memory>
 
 namespace sc
@@ -34,7 +31,8 @@ struct VideoFrameCaptureOpertion
                 std::bind(std::move(*this), std::placeholders::_1), alloc));
     }
 
-    auto operator()(exios::Result<CUdeviceptr, std::error_code> result) -> void
+    template <typename ResultType>
+    auto operator()(ResultType result) -> void
     {
         std::move(completion)(std::move(result));
     }

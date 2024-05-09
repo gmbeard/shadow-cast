@@ -10,10 +10,16 @@ namespace sc
 
 struct NvFbcGpu
 {
-    NvFbcGpu(FrameTime const& frame_time);
+    NvFbcGpu(FrameTime const& frame_time,
+             VideoOutputSize dimensions,
+             std::optional<CaptureResolution> const& override_resolution);
 
-    auto create_encoder(std::string const& codec_name,
-                        VideoOutputSize const& dimensions) -> CodecContextPtr;
+    auto
+    create_encoder(std::string const& codec_name,
+                   VideoOutputSize const& dimensions,
+                   std::optional<CaptureResolution> const& override_dimensions,
+                   std::size_t bitrate,
+                   CaptureQuality const& quality) -> CodecContextPtr;
 
     auto cuda_context() const noexcept -> CUcontextPtr::pointer;
 

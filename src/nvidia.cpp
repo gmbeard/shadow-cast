@@ -1,4 +1,5 @@
 #include "nvidia.hpp"
+#include "nvidia/NvFBC.h"
 #include "nvidia/cuda.hpp"
 #include "utils/base64.hpp"
 #include "utils/frame_time.hpp"
@@ -148,13 +149,17 @@ auto create_nvfbc_session(sc::NvFBC instance) -> sc::NvFBCSessionHandlePtr
 
 auto create_nvfbc_capture_session(NVFBC_SESSION_HANDLE nvfbc_handle,
                                   NvFBC nvfbc,
-                                  FrameTime const& frame_time) -> void
+                                  FrameTime const& frame_time,
+                                  std::optional<NVFBC_SIZE> dimensions) -> void
 {
     NVFBC_CREATE_CAPTURE_SESSION_PARAMS create_capture_params {};
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
     create_capture_params.eCaptureType = NVFBC_CAPTURE_SHARED_CUDA;
     create_capture_params.bWithCursor = NVFBC_TRUE;
     create_capture_params.eTrackingType = NVFBC_TRACKING_SCREEN;
+    if (dimensions) {
+        create_capture_params.frameSize = *dimensions;
+    }
     create_capture_params.dwSamplingRateMs = frame_time.value_in_milliseconds();
     create_capture_params.bAllowDirectCapture = NVFBC_FALSE;
     create_capture_params.bPushModel = NVFBC_FALSE;

@@ -2,10 +2,11 @@
 #define SHADOW_CAST_VIDEO_CAPTURE_LOOP_OPERATION_HPP_INCLUDED
 
 #include "av/frame.hpp"
+#include "capture_pipeline.hpp"
+#include "capture_sink.hpp"
+#include "capture_source.hpp"
 #include "exios/exios.hpp"
-#include "exios/result.hpp"
-#include "media_container.hpp"
-#include "nvidia/cuda.hpp"
+#include "utils/frame_time.hpp"
 #include "video_frame_capture_operation.hpp"
 #include <chrono>
 #include <cinttypes>
@@ -23,8 +24,8 @@ concept VideoCaptureLoopOperationCompletion =
         };
     };
 
-template <typename Desktop,
-          typename Gpu,
+template <CaptureSink Sink,
+          CaptureSource<typename Sink::input_type> Source,
           typename TimerType,
           VideoCaptureLoopOperationCompletion Completion>
 struct VideoCaptureLoopOperation
@@ -39,12 +40,10 @@ struct VideoCaptureLoopOperation
     {
     };
 
-    exios::Context ctx;
-    Desktop& desktop;
-    Gpu& gpu;
-    AVCodecContext* encoder;
-    MediaContainer& container;
+    Sink& sink;
+    Source& source;
     TimerType& timer;
+    FrameTime frame_time;
     Completion completion;
     TimePoint frame_start = ClockType::now();
     FramePtr video_frame { av_frame_alloc() };
@@ -54,9 +53,14 @@ struct VideoCaptureLoopOperation
     {
         auto const alloc = exios::select_allocator(completion);
 
-        ctx.post(std::bind(
-                     std::move(*this), OnNewCapture {}, exios::result_ok(0llu)),
-                 alloc);
+        frame_start = ClockType::now();
+
+        capture_pipeline(sink,
+                         source,
+                         exios::use_allocator(std::bind(std::move(*this),
+                                                        OnCapturedFrame {},
+                                                        std::placeholders::_1),
+                                              alloc));
     }
 
     auto operator()(OnNewCapture, exios::TimerOrEventIoResult result) -> void
@@ -72,21 +76,16 @@ struct VideoCaptureLoopOperation
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
 
-        std::cerr << "Capturing frame: " << frame_number << '\n';
-
-        VideoFrameCaptureOpertion(
-            ctx,
-            desktop,
-            gpu,
-            exios::use_allocator(std::bind(std::move(*this),
-                                           OnCapturedFrame {},
-                                           std::placeholders::_1),
-                                 alloc))
-            .initiate();
+        capture_pipeline(sink,
+                         source,
+                         exios::use_allocator(std::bind(std::move(*this),
+                                                        OnCapturedFrame {},
+                                                        std::placeholders::_1),
+                                              alloc));
     }
 
-    auto operator()(OnCapturedFrame,
-                    exios::Result<CUdeviceptr, std::error_code> result) -> void
+    auto operator()(OnCapturedFrame, Source::completion_result_type result)
+        -> void
     {
         if (!result) {
             finalize(exios::Result<std::error_code> {
@@ -94,23 +93,15 @@ struct VideoCaptureLoopOperation
             return;
         }
 
-        std::cerr << "Writing frame: " << frame_number << '\n';
-
-        fill_frame(
-            gpu, result.value(), encoder, video_frame.get(), frame_number++);
-        container.write_frame(video_frame.get(), encoder);
-
         auto elapsed = ClockType::now() - frame_start;
         std::int64_t delta = std::max(
             1l,
-            static_cast<std::int64_t>(gpu.frame_time().value()) -
+            static_cast<std::int64_t>(frame_time.value()) -
                 std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
                     .count());
 
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
-
-        std::cerr << "Next frame in: " << delta << "ns\n";
 
         timer.wait_for_expiry_after(
             std::chrono::nanoseconds(delta),
@@ -123,8 +114,12 @@ struct VideoCaptureLoopOperation
 private:
     auto finalize(exios::Result<std::error_code> result) -> void
     {
-        container.write_frame(nullptr, encoder);
-        std::move(completion)(std::move(result));
+        if (!result && result.error() != std::errc::operation_canceled) {
+            std::move(completion)(std::move(result));
+        }
+        else {
+            sink.flush(std::move(completion));
+        }
     }
 };
 

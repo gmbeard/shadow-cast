@@ -7,15 +7,22 @@
 #include "nvfbc_gpu.hpp"
 #include "nvidia/cuda.hpp"
 #include "x11_desktop.hpp"
-#include <iostream>
 #include <memory>
 
 namespace sc
 {
 
+struct NvfbcCapturedFrame
+{
+    std::uint32_t width;
+    std::uint32_t height;
+    std::uint32_t byte_size;
+    CUdeviceptr cuda_device;
+};
+
 template <typename T>
 concept CaptureFrameCompletion =
-    requires(T val, exios::Result<CUdeviceptr, std::error_code> result) {
+    requires(T val, exios::Result<NvfbcCapturedFrame, std::error_code> result) {
         {
             val(result)
         };
@@ -27,14 +34,12 @@ auto capture_frame(exios::Context ctx,
                    NvFbcGpu& gpu,
                    Completion&& completion) -> void
 {
-    using Result = exios::Result<CUdeviceptr, std::error_code>;
+    using Result = exios::Result<NvfbcCapturedFrame, std::error_code>;
 
     auto const alloc =
         exios::select_allocator(completion, std::allocator<void> {});
 
-    std::cerr << "capture_frame - initiate\n";
     auto fn = [&gpu, completion = std::move(completion)]() mutable {
-        std::cerr << "capture_frame - begin\n";
         CUdeviceptr cu_device_ptr {};
 
         NVFBC_FRAME_GRAB_INFO frame_info {};
@@ -50,15 +55,18 @@ auto capture_frame(exios::Context ctx,
             status != NVFBC_SUCCESS)
             throw NvFBCError { nvfbc(), gpu.nvfbc_session() };
 
-        std::cerr << "capture_frame - complete\n";
-        std::move(completion)(Result { exios::result_ok(cu_device_ptr) });
+        std::move(completion)(Result { exios::result_ok(
+            NvfbcCapturedFrame { .width = frame_info.dwWidth,
+                                 .height = frame_info.dwHeight,
+                                 .byte_size = frame_info.dwByteSize,
+                                 .cuda_device = cu_device_ptr }) });
     };
 
     ctx.post(std::move(fn), alloc);
 }
 
 auto fill_frame(NvFbcGpu const&,
-                CUdeviceptr value,
+                NvfbcCapturedFrame value,
                 AVCodecContext* codec,
                 AVFrame* frame,
                 std::size_t frame_number) -> void;
