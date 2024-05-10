@@ -23,10 +23,7 @@ namespace
  *
  * If `params.rate == 0` then this select CQ mode. There are 3 quality settings
  * in this mode: low, medium, and high (high being the default). This mode
- * implies a variable bit rate operation. The underlying quality setting sent to
- * NVENC is slightly adjusted upwards when using h264 (confusingly, the value is
- * lower == better for NVENC), meaning file sizes for this format will be
- * slightly higher. I think this is generally accepted.
+ * implies a variable bit rate operation.
  *
  * Both these modes use NVENC's `P5` preset.
  */
@@ -128,9 +125,6 @@ auto create_encoder_context(sc::Parameters const& params,
             qp = 26;
             break;
         }
-
-        if (video_encoder->id == AV_CODEC_ID_H264)
-            qp -= 2;
 
         av_dict_set_int(&options, "qp", qp, 0);
     }
