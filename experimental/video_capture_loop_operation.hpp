@@ -10,6 +10,7 @@
 #include "video_frame_capture_operation.hpp"
 #include <chrono>
 #include <cinttypes>
+#include <cmath>
 #include <functional>
 #include <libavcodec/avcodec.h>
 #include <system_error>
@@ -32,6 +33,7 @@ struct VideoCaptureLoopOperation
 {
     using ClockType = std::chrono::high_resolution_clock;
     using TimePoint = decltype(ClockType::now());
+    using loop_result_type = exios::Result<Timing, std::error_code>;
 
     struct OnNewCapture
     {
@@ -46,8 +48,7 @@ struct VideoCaptureLoopOperation
     FrameTime frame_time;
     Completion completion;
     TimePoint frame_start = ClockType::now();
-    FramePtr video_frame { av_frame_alloc() };
-    std::size_t frame_number { 0 };
+    std::size_t frame_backlog { 0 };
 
     auto initiate() -> void
     {
@@ -63,15 +64,19 @@ struct VideoCaptureLoopOperation
                                               alloc));
     }
 
-    auto operator()(OnNewCapture, exios::TimerOrEventIoResult result) -> void
+    auto operator()(OnNewCapture,
+                    TimePoint next_frame_start,
+                    exios::TimerOrEventIoResult result) -> void
     {
+        frame_start = next_frame_start;
+        if (frame_backlog > 0)
+            frame_backlog -= 1;
+
         if (!result) {
             finalize(exios::Result<std::error_code> {
                 exios::result_error(result.error()) });
             return;
         }
-
-        frame_start = ClockType::now();
 
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
@@ -84,29 +89,39 @@ struct VideoCaptureLoopOperation
                                               alloc));
     }
 
-    auto operator()(OnCapturedFrame, Source::completion_result_type result)
-        -> void
+    auto operator()(OnCapturedFrame, loop_result_type result) -> void
     {
+        auto const frame_finish = ClockType::now();
+        auto const elapsed = frame_finish - frame_start;
+
         if (!result) {
             finalize(exios::Result<std::error_code> {
                 exios::result_error(result.error()) });
             return;
         }
 
-        auto elapsed = ClockType::now() - frame_start;
-        std::int64_t delta = std::max(
-            1l,
-            static_cast<std::int64_t>(frame_time.value()) -
-                std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
-                    .count());
+        auto const missed_frames =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
+                .count() /
+            frame_time.value();
+
+        auto delta = std::chrono::nanoseconds(frame_time.value()) -
+                     (elapsed % std::chrono::nanoseconds(frame_time.value()));
+
+        frame_backlog += missed_frames;
 
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
 
+        if (frame_backlog > 0) {
+            delta = std::chrono::nanoseconds(1);
+        }
+
         timer.wait_for_expiry_after(
-            std::chrono::nanoseconds(delta),
+            delta,
             exios::use_allocator(std::bind(std::move(*this),
                                            OnNewCapture {},
+                                           frame_finish + delta,
                                            std::placeholders::_1),
                                  alloc));
     }

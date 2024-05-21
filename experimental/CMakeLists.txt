@@ -2,6 +2,8 @@ add_executable(shadowcast)
 target_sources(
     shadowcast
     PUBLIC
+        audio_capture.cpp
+        audio_encoder_sink.cpp
         cuda.cpp
         main.cpp
         media_container.cpp
@@ -10,6 +12,7 @@ target_sources(
         nvfbc_capture.cpp
         nvfbc_capture_source.cpp
         nvfbc_gpu.cpp
+        pipewire_capture_source.cpp
         sticky_cancel_timer.cpp
         x11_desktop.cpp
         x11_platform.cpp

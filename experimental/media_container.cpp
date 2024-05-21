@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
+#include <libavutil/avutil.h>
 #include <span>
 
 namespace sc
@@ -66,7 +67,6 @@ auto MediaContainer::write_frame(AVFrame* frame, AVCodecContext* codec) -> void
 
     // cppcheck-suppress [derefInvalidIteratorRedundantCheck]
     send_frame(frame, codec, ctx_.get(), *stream_pos, packet_.get());
-    av_frame_unref(frame);
 }
 
 auto MediaContainer::write_trailer() -> void
@@ -88,9 +88,9 @@ auto MediaContainer::add_stream(AVCodecContext const* encoder) -> void
                                                            encoder->codec) };
 
     stream->index = stream_count_++;
+
     if (!stream)
         throw sc::CodecError { "Failed to allocate stream" };
-    //
 
     if (auto const ret =
             avcodec_parameters_from_context(stream->codecpar, encoder);
