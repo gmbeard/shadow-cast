@@ -59,13 +59,19 @@ auto get_resolution(std::string_view param, sc::CaptureResolution& res) noexcept
 auto quality_string_value_to_enum_value(std::string_view val) noexcept
     -> sc::CaptureQuality
 {
+    if (val == "min")
+        return sc::CaptureQuality::minimum;
+
     if (val == "low")
         return sc::CaptureQuality::low;
 
     if (val == "medium")
         return sc::CaptureQuality::medium;
 
-    return sc::CaptureQuality::high;
+    if (val == "high")
+        return sc::CaptureQuality::high;
+
+    return sc::CaptureQuality::maximum;
 }
 
 template <typename T>
@@ -166,7 +172,8 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .long_name = "--quality",
         .option = sc::CmdLineOption::quality,
         .flags = sc::cmdline::VALUE_REQUIRED,
-        .validation = construct<sc::AcceptableValues>("low", "medium", "high"),
+        .validation = construct<sc::AcceptableValues>(
+            "min", "low", "medium", "high", "max"),
         .description =
             "Capture quality. Accepted values are 'low', 'medium', or 'high'. "
             "Default 'high'. This implies constant quality mode.",

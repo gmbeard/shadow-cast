@@ -116,6 +116,9 @@ auto create_encoder_context(sc::Parameters const& params,
         int qp = 0;
         av_dict_set(&options, "rc", "constqp", 0);
         switch (params.quality) {
+        case sc::CaptureQuality::minimum:
+            qp = 40;
+            break;
         case sc::CaptureQuality::low:
             qp = 36;
             break;
@@ -124,6 +127,9 @@ auto create_encoder_context(sc::Parameters const& params,
             break;
         case sc::CaptureQuality::high:
             qp = 24;
+            break;
+        case sc::CaptureQuality::maximum:
+            qp = 21;
             break;
         }
 

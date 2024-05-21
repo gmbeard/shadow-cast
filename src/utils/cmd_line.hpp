@@ -46,9 +46,11 @@ enum class CmdLineOption
 
 enum class CaptureQuality
 {
+    minimum,
     low,
     medium,
-    high
+    high,
+    maximum,
 };
 
 struct CaptureResolution
