@@ -38,6 +38,7 @@ struct NvfbcCaptureSource
             grab_params.pFrameGrabInfo = &frame_info;
             grab_params.pCUDADeviceBuffer = &cu_device_ptr;
 
+            Elapsed timer;
             if (auto const status =
                     nvfbc().nvFBCToCudaGrabFrame(nvfbc_session, &grab_params);
                 status != NVFBC_SUCCESS)

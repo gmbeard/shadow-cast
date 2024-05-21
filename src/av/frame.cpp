@@ -1,6 +1,7 @@
 #include "av/frame.hpp"
 #include "av/packet.hpp"
 #include "error.hpp"
+#include <libavutil/avutil.h>
 #include <mutex>
 #include <stdexcept>
 
@@ -50,7 +51,6 @@ auto send_frame(AVFrame* frame,
         }
 
         PacketUnrefGuard packet_unref_guard { packet };
-
         packet->stream_index = stream->index;
         av_packet_rescale_ts(packet, ctx->time_base, stream->time_base);
 

@@ -4,6 +4,7 @@
 #include "cuda.hpp"
 #include "utils/cmd_line.hpp"
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/rational.h>
 
 namespace
 {
@@ -41,18 +42,16 @@ auto create_encoder_context(sc::Parameters const& params,
     sc::CodecContextPtr video_encoder_context { avcodec_alloc_context3(
         video_encoder.get()) };
     video_encoder_context->codec_id = video_encoder->id;
-    auto const timebase =
-        AVRational { .num = 1,
-                     .den = static_cast<int>(params.frame_time.fps()) };
-    video_encoder_context->time_base = timebase;
-    video_encoder_context->framerate =
-        AVRational { timebase.den, timebase.num };
-    video_encoder_context->sample_aspect_ratio = AVRational { 0, 1 };
+    auto const framerate =
+        av_make_q(static_cast<int>(params.frame_time.fps()), 1);
+    video_encoder_context->framerate = framerate;
+    video_encoder_context->time_base = av_inv_q(framerate);
+    video_encoder_context->sample_aspect_ratio = av_make_q(0, 1);
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
     video_encoder_context->bit_rate = params.bitrate;
     if (params.bitrate) {
         video_encoder_context->max_b_frames = 2;
-        video_encoder_context->gop_size = params.frame_time.fps() * 2;
+        video_encoder_context->gop_size = framerate.num * 2;
     }
 
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -110,19 +109,21 @@ auto create_encoder_context(sc::Parameters const& params,
 
     AVDictionary* options = nullptr;
     av_dict_set(&options, "preset", "p5", 0);
-    av_dict_set(&options, "coder", "cabac", 0);
+    if (video_encoder->id == AV_CODEC_ID_H264) {
+        av_dict_set(&options, "coder", "cabac", 0);
+    }
     if (params.bitrate == 0) {
         int qp = 0;
         av_dict_set(&options, "rc", "constqp", 0);
         switch (params.quality) {
         case sc::CaptureQuality::low:
-            qp = 40;
+            qp = 36;
             break;
         case sc::CaptureQuality::medium:
-            qp = 32;
+            qp = 30;
             break;
         case sc::CaptureQuality::high:
-            qp = 26;
+            qp = 24;
             break;
         }
 

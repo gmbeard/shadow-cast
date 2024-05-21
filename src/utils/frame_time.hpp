@@ -10,7 +10,8 @@ struct FrameTime
 {
     explicit FrameTime(std::uint64_t) noexcept;
     auto value() const noexcept -> std::uint64_t;
-    auto value_in_milliseconds() const noexcept -> std::uint64_t;
+    auto value_in_milliseconds(bool round_up = false) const noexcept
+        -> std::uint64_t;
     auto fps() const noexcept -> float;
     auto per_second_ratio() const noexcept -> AVRational;
 

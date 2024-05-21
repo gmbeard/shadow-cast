@@ -21,9 +21,10 @@ auto FrameTime::value() const noexcept -> std::uint64_t
     return frame_time_nanoseconds_;
 }
 
-auto FrameTime::value_in_milliseconds() const noexcept -> std::uint64_t
+auto FrameTime::value_in_milliseconds(bool round_up) const noexcept
+    -> std::uint64_t
 {
-    return (frame_time_nanoseconds_ + kRound) / kNsPerMs;
+    return (frame_time_nanoseconds_ + (round_up ? kRound : 0)) / kNsPerMs;
 }
 
 auto FrameTime::fps() const noexcept -> float

@@ -187,6 +187,7 @@ struct AnyVideoCaptureCallback
         SC_EXPECT(erased_state_);
         SC_EXPECT(vtable_);
 
+        // cppcheck-suppress [nullPointerRedundantCheck]
         vtable_->invoke(erased_state_, std::move(result));
         erased_state_ = nullptr;
     }
@@ -247,6 +248,7 @@ struct AnyVideoCapture
     {
         SC_EXPECT(erased_state_);
         SC_EXPECT(vtable_);
+        // cppcheck-suppress [nullPointerRedundantCheck]
         vtable_->cancel(erased_state_);
     }
 
@@ -255,6 +257,7 @@ struct AnyVideoCapture
     {
         SC_EXPECT(erased_state_);
         SC_EXPECT(vtable_);
+        // cppcheck-suppress [nullPointerRedundantCheck]
         vtable_->run(
             erased_state_,
             detail::AnyVideoCaptureCallback(alloc, std::move(completion)));
