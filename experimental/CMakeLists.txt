@@ -11,7 +11,7 @@ target_sources(
         nvfbc.cpp
         nvfbc_capture.cpp
         nvfbc_capture_source.cpp
-        nvfbc_gpu.cpp
+        #nvfbc_gpu.cpp
         pipewire_capture_source.cpp
         sticky_cancel_timer.cpp
         x11_desktop.cpp
