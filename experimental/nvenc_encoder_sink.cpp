@@ -3,6 +3,7 @@
 #include "av/codec.hpp"
 #include "cuda.hpp"
 #include "utils/cmd_line.hpp"
+#include <libavutil/dict.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/rational.h>
 
@@ -110,30 +111,31 @@ auto create_encoder_context(sc::Parameters const& params,
     AVDictionary* options = nullptr;
     av_dict_set(&options, "preset", "p5", 0);
     if (video_encoder->id == AV_CODEC_ID_H264) {
+        av_dict_set(&options, "profile", "high", 0);
         av_dict_set(&options, "coder", "cabac", 0);
     }
     if (params.bitrate == 0) {
-        int qp = 0;
-        av_dict_set(&options, "rc", "constqp", 0);
+        int cq = 0;
+        av_dict_set(&options, "rc", "vbr", 0);
         switch (params.quality) {
         case sc::CaptureQuality::minimum:
-            qp = 40;
+            cq = 43;
             break;
         case sc::CaptureQuality::low:
-            qp = 36;
+            cq = 37;
             break;
         case sc::CaptureQuality::medium:
-            qp = 30;
+            cq = 31;
             break;
         case sc::CaptureQuality::high:
-            qp = 24;
+            cq = 25;
             break;
         case sc::CaptureQuality::maximum:
-            qp = 21;
+            cq = 19;
             break;
         }
 
-        av_dict_set_int(&options, "qp", qp, 0);
+        av_dict_set_int(&options, "cq", cq, 0);
     }
     else {
         av_dict_set(&options, "rc", "cbr", 0);
