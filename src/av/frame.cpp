@@ -39,8 +39,14 @@ auto send_frame(AVFrame* frame,
                 AVPacket* packet) -> void
 {
     auto response = avcodec_send_frame(ctx, frame);
+    if (response < 0 && response != AVERROR(EAGAIN)) {
+        throw std::runtime_error { "send frame error: " +
+                                   av_error_to_string(response) };
+    }
 
-    while (response >= 0) {
+    bool requeue = response == AVERROR(EAGAIN);
+
+    while (response >= 0 || response == AVERROR(EAGAIN)) {
         response = avcodec_receive_packet(ctx, packet);
         if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
             break;
@@ -61,6 +67,10 @@ auto send_frame(AVFrame* frame,
             throw std::runtime_error { "write packet error: " +
                                        av_error_to_string(response) };
         }
+    }
+
+    if (requeue) {
+        send_frame(frame, ctx, fmt, stream, packet);
     }
 }
 } // namespace sc

@@ -1,4 +1,5 @@
 #include "pipewire_capture_source.hpp"
+#include "logging.hpp"
 #include "utils/contracts.hpp"
 #include "utils/elapsed.hpp"
 #include "utils/scope_guard.hpp"
@@ -14,11 +15,25 @@ namespace sc
 PipewireCaptureSource::PipewireCaptureSource(exios::Context const& ctx,
                                              Parameters const& params,
                                              std::size_t frame_size)
-    : state_ { std::make_unique<detail::PipewireCaptureSourceState>(
-          exios::Event { ctx, exios::semaphone_mode }, frame_size) }
+    : context_ { ctx }
+    , event_ { ctx, exios::semaphone_mode }
+    , state_ { std::make_unique<detail::PipewireCaptureSourceState>(
+          StickyCancelEvent { ctx, exios::semaphone_mode }, frame_size) }
 {
     state_->required_sample_rate = params.sample_rate;
 }
+
+auto PipewireCaptureSource::event() noexcept -> StickyCancelEvent&
+{
+    return state_->audio_buffer_event;
+}
+
+auto PipewireCaptureSource::context() const noexcept -> exios::Context const&
+{
+    return context_;
+}
+auto PipewireCaptureSource::init() -> void { start_audio_stream(); }
+auto PipewireCaptureSource::deinit() -> void { stop_audio_stream(); }
 
 auto PipewireCaptureSource::start_audio_stream() -> void
 {
@@ -219,11 +234,11 @@ void PipewireCaptureSource::on_stream_param_changed(void* data,
      *  Get rid of this console printing and replace with a
      *  proper logging system...
      */
-    fprintf(stdout,
-            "capturing rate: %d, format: 0x%x, channels: %d\n",
-            state.format.info.raw.rate,
-            state.format.info.raw.format,
-            state.format.info.raw.channels);
+    log(LogLevel::info,
+        "Pipewire capture rate: %dHz, format: 0x%x, channels: %d",
+        state.format.info.raw.rate,
+        state.format.info.raw.format,
+        state.format.info.raw.channels);
 }
 
 namespace detail

@@ -1,84 +1,94 @@
 #include "./audio_encoder_sink.hpp"
-#include "./cuda.hpp"
 #include "./media_container.hpp"
-#include "./nvfbc.hpp"
-#include "./nvfbc_capture.hpp"
 #include "./nvfbc_capture_source.hpp"
 #include "./pipewire_capture_source.hpp"
-#include "./video_capture.hpp"
 #include "./x11_desktop.hpp"
-#include "any_video_capture.hpp"
-#include "audio_capture.hpp"
-#include "capture_source.hpp"
+#include "capture.hpp"
 #include "io/signals.hpp"
+#include "logging.hpp"
 #include "nvenc_encoder_sink.hpp"
-#include "nvfbc_gpu.hpp"
 #include "utils/cmd_line.hpp"
 #include <iostream>
 #include <signal.h>
-#include <thread>
+
+#define AUDIO_ENABLED 1
+#define VIDEO_ENABLED 1
 
 auto app(sc::Parameters params) -> void
 {
+    auto cuda_ctx = sc::make_cuda_context();
     exios::ContextThread execution_context;
     exios::Signal signal { execution_context, SIGINT };
     sc::X11Desktop desktop;
     sc::MediaContainer container { params.output_file };
 
-    // FIX: If we create the sink and source in the opposite order then NVFBC
-    // complains about the CUDA context. Does this mean that initializing NVENC
-    // (indirectly via libav) somehow does the CUDA initialization work for us?
-    sc::NvencEncoderSink sink {
-        execution_context, container, params, desktop.size()
+#if defined(VIDEO_ENABLED)
+    sc::NvfbcCaptureSource video_source { execution_context,
+                                          params,
+                                          desktop.size() };
+    sc::NvencEncoderSink video_sink {
+        execution_context, cuda_ctx.get(), container, params, desktop.size()
     };
-    sc::NvfbcCaptureSource source { execution_context, params, desktop.size() };
+    sc::Capture video_capture { std::move(video_source),
+                                std::move(video_sink) };
+#endif
 
-    sc::AnyVideoCapture video_capture {
-        execution_context, std::allocator<void> {}, std::move(sink),
-        std::move(source), params.frame_time,
-    };
-
+#if defined(AUDIO_ENABLED)
     sc::AudioEncoderSink audio_sink { execution_context, container, params };
     sc::PipewireCaptureSource audio_source { execution_context,
                                              params,
                                              audio_sink.frame_size() };
 
-    sc::AudioCapture audio_capture { std::move(audio_sink),
-                                     std::move(audio_source) };
+    sc::Capture audio_capture { std::move(audio_source),
+                                std::move(audio_sink) };
+#endif
 
     try {
+        sc::log(sc::LogLevel::info, "Preparing output container");
         container.write_header();
 
         signal.wait([&](auto) {
+            sc::log(sc::LogLevel::info, "Signal received. Stopping.");
+#if defined(AUDIO_ENABLED)
             audio_capture.cancel();
+#endif
+#if defined(VIDEO_ENABLED)
             video_capture.cancel();
+#endif
         });
 
+#if defined(AUDIO_ENABLED)
         audio_capture.run([&](exios::Result<std::error_code> result) {
+#if defined(VIDEO_ENABLED)
             video_capture.cancel();
+#endif
             signal.cancel();
 
             if (!result && result.error() != std::errc::operation_canceled)
                 throw std::system_error { result.error() };
         });
+#endif
 
-        video_capture.run(
-            [&](exios::Result<std::error_code> result) {
-                audio_capture.cancel();
-                signal.cancel();
+#if defined(VIDEO_ENABLED)
+        video_capture.run([&](exios::Result<std::error_code> result) {
+#if defined(AUDIO_ENABLED)
+            audio_capture.cancel();
+#endif
+            signal.cancel();
 
-                if (!result && result.error() != std::errc::operation_canceled)
-                    throw std::system_error { result.error() };
-            },
-            std::allocator<void> {});
+            if (!result && result.error() != std::errc::operation_canceled)
+                throw std::system_error { result.error() };
+        });
+#endif
 
-        std::cerr << "Capture running. Ctrl+C to stop...\n";
+        sc::log(sc::LogLevel::info, "Capture running.");
         static_cast<void>(execution_context.run());
+        sc::log(sc::LogLevel::info, "Finalizing output container");
         container.write_trailer();
-        std::cerr << "Finished\n";
+        sc::log(sc::LogLevel::info, "Finished");
     }
     catch (std::exception const& e) {
-        std::cerr << "ERROR: " << e.what() << '\n';
+        sc::log(sc::LogLevel::error, "%s", e.what());
     }
 }
 

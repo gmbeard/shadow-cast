@@ -1,5 +1,6 @@
 #include "audio_encoder_sink.hpp"
 #include "av/sample_format.hpp"
+#include "utils/cmd_line.hpp"
 #include <libavutil/frame.h>
 
 namespace
@@ -43,7 +44,10 @@ auto create_encoder_context(sc::Parameters const& params) -> sc::CodecContextPtr
     audio_encoder_context->sample_rate = params.sample_rate;
     audio_encoder_context->sample_fmt =
         sc::convert_to_libav_format(supported_formats.front());
-    audio_encoder_context->bit_rate = 128'000;
+    audio_encoder_context->bit_rate =
+        params.quality == sc::CaptureQuality::minimum ? 64'000
+        : params.quality == sc::CaptureQuality::low   ? 96'000
+                                                      : 128'000;
     audio_encoder_context->time_base = av_make_q(1, params.sample_rate);
     audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -89,7 +93,7 @@ AudioEncoderSink::AudioEncoderSink(exios::Context ctx,
     container_.add_stream(encoder_context_.get());
 }
 
-auto AudioEncoderSink::prepare_input() -> input_type
+auto AudioEncoderSink::prepare() -> input_type
 {
     if (av_frame_make_writable(frame_.get()) < 0)
         throw std::runtime_error { "Couldn't make frame writable" };

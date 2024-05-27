@@ -23,9 +23,9 @@ namespace
  * this mode is that it is for live streaming purposes. Streaming services
  * typically prefer this, and put upper limits on the bit rate.
  *
- * If `params.rate == 0` then this select CQ mode. There are 3 quality settings
- * in this mode: low, medium, and high (high being the default). This mode
- * implies a variable bit rate operation.
+ * If `params.rate == 0` then this select CQ mode. There are several quality
+ * settings in this mode, with high being the default. This mode implies a
+ * variable bit rate operation.
  *
  * Both these modes use NVENC's `P5` preset.
  */
@@ -156,20 +156,20 @@ auto create_encoder_context(sc::Parameters const& params,
 namespace sc
 {
 NvencEncoderSink::NvencEncoderSink(exios::Context ctx,
+                                   CUcontext cuda_ctx,
                                    MediaContainer& container,
                                    Parameters const& params,
                                    VideoOutputSize desktop_resolution)
     : ctx_ { ctx }
     , container_ { container }
-    , cuda_context_ { make_cuda_context() }
     , encoder_context_ { create_encoder_context(
-          params, desktop_resolution, cuda_context_.get()) }
+          params, desktop_resolution, cuda_ctx) }
     , frame_ { av_frame_alloc() }
 {
     container_.add_stream(encoder_context_.get());
 }
 
-auto NvencEncoderSink::prepare_input() -> input_type
+auto NvencEncoderSink::prepare() -> input_type
 {
     if (auto const r = av_hwframe_get_buffer(
             encoder_context_->hw_frames_ctx, frame_.get(), 0);

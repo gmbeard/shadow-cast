@@ -5,6 +5,7 @@
 #include "av/sample_format.hpp"
 #include "capture_source.hpp"
 #include "exios/exios.hpp"
+#include "sticky_cancel_event.hpp"
 #include "utils/cmd_line.hpp"
 #include "utils/contracts.hpp"
 #include <libavutil/frame.h>
@@ -22,7 +23,7 @@ namespace detail
 
 struct PipewireCaptureSourceState
 {
-    exios::Event audio_buffer_event;
+    StickyCancelEvent audio_buffer_event;
     std::size_t audio_buffer_high_watermark;
 
     SampleFormat required_sample_format { SampleFormat::float_planar };
@@ -49,45 +50,45 @@ struct PipewireCaptureSource
                                    Parameters const&,
                                    std::size_t frame_size);
 
-    using completion_result_type = exios::Result<std::error_code>;
+    using CaptureResultType = exios::Result<AVFrame*, std::error_code>;
 
+    auto context() const noexcept -> exios::Context const&;
+    auto event() noexcept -> StickyCancelEvent&;
+    auto init() -> void;
+    auto deinit() -> void;
     auto start_audio_stream() -> void;
     auto stop_audio_stream() -> void;
     auto cancel() noexcept -> void;
+    static constexpr auto name() noexcept -> char const*
+    {
+        return "Pipewire capture";
+    };
 
-    template <CaptureCompletion<completion_result_type> Completion>
+    template <CaptureCompletion<CaptureResultType> Completion>
     auto capture(AVFrame* frame, Completion&& completion) -> void
     {
-        auto const alloc = exios::select_allocator(completion);
-
         SC_EXPECT(frame->nb_samples > 0);
 
-        auto& state = *state_;
+        auto f = [frame,
+                  completion = std::move(completion),
+                  &state = *state_]() mutable {
+            {
+                std::unique_lock lock { state.audio_data_mutex };
+                SC_EXPECT(state.audio_data.sample_count >=
+                          static_cast<std::size_t>(frame->nb_samples));
+                frame->pts = state.samples_written;
+                detail::transfer_samples(
+                    state.audio_data,
+                    *frame,
+                    static_cast<std::size_t>(frame->nb_samples));
+                state.samples_written += frame->nb_samples;
+            }
 
-        state.audio_buffer_event.wait_for_event(exios::use_allocator(
-            [frame, completion = std::move(completion), &state](
-                auto result) mutable {
-                if (!result) {
-                    std::move(completion)(completion_result_type {
-                        exios::result_error(result.error()) });
-                    return;
-                }
+            std::move(completion)(
+                CaptureResultType { exios::result_ok(frame) });
+        };
 
-                {
-                    std::unique_lock lock { state.audio_data_mutex };
-                    SC_EXPECT(state.audio_data.sample_count >=
-                              static_cast<std::size_t>(frame->nb_samples));
-                    frame->pts = state.samples_written;
-                    detail::transfer_samples(
-                        state.audio_data,
-                        *frame,
-                        static_cast<std::size_t>(frame->nb_samples));
-                    state.samples_written += frame->nb_samples;
-                }
-
-                std::move(completion)(completion_result_type {});
-            },
-            alloc));
+        context_.post(std::move(f), exios::select_allocator(completion));
     }
 
 private:
@@ -96,6 +97,8 @@ private:
                                         uint32_t id,
                                         const struct spa_pod* param);
 
+    exios::Context context_;
+    StickyCancelEvent event_;
     std::unique_ptr<detail::PipewireCaptureSourceState> state_;
 };
 
