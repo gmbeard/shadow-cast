@@ -105,6 +105,9 @@ endif()
 if(SHADOW_CAST_ENABLE_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    if(SHADOW_CAST_ENABLE_EXPERIMENTAL)
+        add_subdirectory(experimental_tests)
+    endif()
 endif()
 
 configure_file(

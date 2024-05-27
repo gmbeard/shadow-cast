@@ -3,7 +3,6 @@
 #include "error.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include "utils/contracts.hpp"
-#include "utils/scope_guard.hpp"
 #include <algorithm>
 #include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>

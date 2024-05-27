@@ -7,7 +7,9 @@
 #include "exios/exios.hpp"
 #include "nvfbc.hpp"
 #include "nvidia/cuda.hpp"
+#include "sticky_cancel_timer.hpp"
 #include "utils/cmd_line.hpp"
+#include <chrono>
 
 namespace sc
 {
@@ -16,10 +18,24 @@ struct NvfbcCaptureSource
     NvfbcCaptureSource(exios::Context ctx,
                        Parameters const& params,
                        VideoOutputSize desktop_resolution);
+    NvfbcCaptureSource(NvfbcCaptureSource&&) noexcept = default;
+    ~NvfbcCaptureSource();
 
-    using completion_result_type = exios::Result<std::error_code>;
+    auto operator=(NvfbcCaptureSource&&) noexcept
+        -> NvfbcCaptureSource& = default;
 
-    template <CaptureCompletion<completion_result_type> Completion>
+    using CaptureResultType = exios::Result<AVFrame*, std::error_code>;
+
+    auto context() const noexcept -> exios::Context const&;
+    auto cancel() noexcept -> void;
+    auto timer() noexcept -> StickyCancelTimer&;
+    auto interval() const noexcept -> std::chrono::nanoseconds;
+    static constexpr auto name() noexcept -> char const*
+    {
+        return "NvFBC capture";
+    };
+
+    template <CaptureCompletion<CaptureResultType> Completion>
     auto capture(AVFrame* frame, Completion&& completion) -> void
     {
         auto const alloc = exios::select_allocator(completion);
@@ -71,7 +87,8 @@ struct NvfbcCaptureSource
 
             frame->pts = frame_number;
 
-            std::move(completion)(completion_result_type {});
+            std::move(completion)(
+                CaptureResultType { exios::result_ok(frame) });
         };
 
         ctx_.post(std::move(fn), alloc);
@@ -79,6 +96,8 @@ struct NvfbcCaptureSource
 
 private:
     exios::Context ctx_;
+    StickyCancelTimer timer_;
+    std::chrono::nanoseconds frame_interval_;
     NvFBCSessionHandlePtr nvfbc_session_;
     std::size_t frame_number_ { 0 };
 };

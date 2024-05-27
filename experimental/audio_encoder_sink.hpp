@@ -19,10 +19,10 @@ struct AudioEncoderSink
                      MediaContainer& container,
                      Parameters const& params);
 
-    auto prepare_input() -> input_type;
+    auto prepare() -> input_type;
 
     template <AddToSinkCompletion<completion_result_type> Completion>
-    auto add(input_type input, Completion&& completion) -> void
+    auto write(input_type input, Completion&& completion) -> void
     {
         auto const alloc = exios::select_allocator(completion);
 

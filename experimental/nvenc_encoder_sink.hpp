@@ -16,6 +16,7 @@ namespace sc
 struct NvencEncoderSink
 {
     NvencEncoderSink(exios::Context ctx,
+                     CUcontext cuda_ctx,
                      MediaContainer& container,
                      Parameters const& params,
                      VideoOutputSize desktop_resolution);
@@ -23,10 +24,10 @@ struct NvencEncoderSink
     using input_type = AVFrame*;
     using completion_result_type = exios::Result<std::error_code>;
 
-    auto prepare_input() -> input_type;
+    auto prepare() -> input_type;
 
     template <AddToSinkCompletion<completion_result_type> Completion>
-    auto add(input_type input, Completion&& completion) -> void
+    auto write(input_type input, Completion&& completion) -> void
     {
         auto const alloc = exios::select_allocator(completion);
 
@@ -60,7 +61,6 @@ struct NvencEncoderSink
 private:
     exios::Context ctx_;
     MediaContainer& container_;
-    CUcontextPtr cuda_context_;
     CodecContextPtr encoder_context_;
     FramePtr frame_;
 };
