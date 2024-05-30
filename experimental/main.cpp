@@ -8,7 +8,6 @@
 #include "logging.hpp"
 #include "nvenc_encoder_sink.hpp"
 #include "utils/cmd_line.hpp"
-#include <iostream>
 #include <signal.h>
 
 #define AUDIO_ENABLED 1
@@ -49,11 +48,11 @@ auto app(sc::Parameters params) -> void
 
         signal.wait([&](auto) {
             sc::log(sc::LogLevel::info, "Signal received. Stopping.");
-#if defined(AUDIO_ENABLED)
-            audio_capture.cancel();
-#endif
 #if defined(VIDEO_ENABLED)
             video_capture.cancel();
+#endif
+#if defined(AUDIO_ENABLED)
+            audio_capture.cancel();
 #endif
         });
 

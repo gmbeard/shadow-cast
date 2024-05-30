@@ -93,6 +93,10 @@ struct AudioCaptureLoopOperation
 private:
     auto finalize(FrameCaptureResult result) -> void
     {
+        /* TODO: We need a way of flushing the remaining samples
+         * in the buffer, here...
+         */
+
         if (!result)
             std::move(completion)(exios::Result<std::error_code> {
                 exios::result_error(result.error()) });
@@ -125,9 +129,12 @@ struct VideoCaptureLoopOperation
             .count()
     };
     TimePoint frame_start = ClockType::now();
+    TimePoint loop_start = frame_start;
     std::size_t frame_backlog { 0 };
     std::size_t frame_number { 0 };
     std::int64_t total_frame_time { 0 };
+    bool frame_lag { false };
+    std::size_t frame_lag_start { 0 };
 
     auto initiate() -> void
     {
@@ -144,20 +151,17 @@ struct VideoCaptureLoopOperation
                     TimePoint next_frame_start,
                     exios::TimerOrEventIoResult result) -> void
     {
-        /* Record the required frame start time. Using `ClockType::now()` isn't
-         * reliable because there may be overhead in calling the timeout
-         * callback...
-         */
-        frame_start = next_frame_start;
-        if (frame_backlog > 0)
-            frame_backlog -= 1;
-
         if (!result) {
             finalize(
                 FrameCaptureResult { exios::result_error(result.error()) });
             return;
         }
 
+        /* Record the required frame start time. Using `ClockType::now()` isn't
+         * reliable because there may be overhead in calling the timeout
+         * callback...
+         */
+        frame_start = next_frame_start;
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
 
@@ -174,12 +178,6 @@ struct VideoCaptureLoopOperation
         namespace ch = std::chrono;
 
         auto const frame_finish = ClockType::now();
-        /* Elapsed time accounts for the time it took for a frame to be
-         * captured, plus the overhead of the I/O system...
-         */
-        auto const elapsed =
-            ch::duration_cast<ch::nanoseconds>(frame_finish - frame_start)
-                .count();
 
         if (!result) {
             finalize(
@@ -187,38 +185,33 @@ struct VideoCaptureLoopOperation
             return;
         }
 
-        /* Track how many frames we missed in the last interval. This is where
-         * the time took to process the last frame exceeded the frame interval
-         * value...
-         */
-        std::size_t const missed_frames = elapsed / frame_time;
+        frame_number += 1;
 
-        if (missed_frames > 0) {
-            log(LogLevel::warn,
-                "Frame %llu took %lluns and missed %llu frame%s (Source="
-                "%lluns, Sink=%lluns). Attempting to catch up.",
-                frame_number,
-                elapsed,
-                missed_frames,
-                (missed_frames > 1 ? "s" : ""),
-                result.value().capture_duration.count(),
-                result.value().sink_write_duration.count());
-        }
+        std::size_t const total_duration_ns =
+            ch::duration_cast<ch::nanoseconds>(frame_finish - loop_start)
+                .count();
 
-        frame_backlog += missed_frames;
+        std::size_t const expected_frames =
+            (total_duration_ns + frame_time - 1) / frame_time;
+        std::size_t delta = expected_frames * frame_time - total_duration_ns;
 
-        /* Work out how much to wait until the next frame...
-         */
-        auto delta = frame_time - (elapsed - (missed_frames * frame_time));
-
-        /* If we have a frame backlog then we're behind, so capture a new
-         * frame immediately without waiting for the next interval...
-         */
-        if (frame_backlog > 0) {
+        if (expected_frames > frame_number) {
+            frame_lag = true;
             delta = 0;
         }
-
-        frame_number += 1;
+        else {
+            if (frame_lag) {
+                log(LogLevel::warn,
+                    "%s: Frame lag detected between frames %llu and "
+                    "%llu (%llu frames). Output may contain artifacts.",
+                    source.name(),
+                    frame_lag_start,
+                    frame_number,
+                    frame_number - frame_lag_start);
+            }
+            frame_lag = false;
+            frame_lag_start = frame_number;
+        }
 
         auto const alloc = exios::select_allocator(completion);
         source.timer().wait_for_expiry_after(
@@ -237,6 +230,7 @@ struct VideoCaptureLoopOperation
 
     auto operator()(OnClearBacklog, FrameCaptureResult result) -> void
     {
+        frame_backlog -= 1;
         if (frame_backlog == 0 || !result) {
             if (!result)
                 std::move(completion)(exios::Result<std::error_code> {
@@ -248,7 +242,10 @@ struct VideoCaptureLoopOperation
         }
 
         SC_EXPECT(frame_backlog > 0);
-        frame_backlog -= 1;
+        log(LogLevel::debug,
+            "%s: Frame backlog is now %llu",
+            source.name(),
+            frame_backlog);
         auto const alloc = exios::select_allocator(completion);
 
         frame_capture(source,
@@ -262,6 +259,27 @@ struct VideoCaptureLoopOperation
 private:
     auto finalize(FrameCaptureResult result) -> void
     {
+        auto const total_loop_time_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                ClockType::now() - loop_start)
+                .count();
+
+        std::size_t const target_frame_count =
+            (total_loop_time_ns + frame_time - 1) / frame_time;
+
+        log(LogLevel::debug,
+            "%s: Expected frames: %llu. Actual frames: %llu",
+            source.name(),
+            target_frame_count,
+            frame_number);
+        if (target_frame_count > frame_number) {
+            log(LogLevel::debug,
+                "%s: Capturing %llu extra frames",
+                source.name(),
+                (target_frame_count - frame_number));
+            frame_backlog += target_frame_count - frame_number;
+        }
+
         if (!result && result.error() == std::errc::operation_canceled &&
             frame_backlog > 0) {
             log(LogLevel::info,
