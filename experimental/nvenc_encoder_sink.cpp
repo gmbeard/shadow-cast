@@ -186,6 +186,10 @@ auto NvencEncoderSink::prepare() -> input_type
     frame_->colorspace = encoder_context_->colorspace;
     frame_->chroma_location = encoder_context_->chroma_sample_location;
 
+    /* FIX: We need to return some sort of RAII type instead of a
+     * raw frame here. If we throw between the call to `prepare()` and
+     * `write()` then we leak this memory...
+     */
     return frame_.get();
 }
 

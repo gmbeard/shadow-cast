@@ -207,6 +207,9 @@ private:
         {
         }
 
+        CaptureModel(CaptureModel const&) = delete;
+        auto operator=(CaptureModel const&) -> CaptureModel& = delete;
+
         auto cancel() noexcept -> void override { source_.cancel(); }
 
         auto run(detail::CaptureCallback&& completion) -> void override
