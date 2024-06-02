@@ -27,6 +27,18 @@ check_ipo_supported(
     LANGUAGES CXX
 )
 
+find_file(
+    NVFBC_KEY_FILE
+    NAME nvfbc.key
+    PATHS "${PROJECT_SOURCE_DIR}/.private"
+    NO_DEFAULT_PATH
+)
+
+if (NVFBC_KEY_FILE)
+    file(READ "${NVFBC_KEY_FILE}" NVFBC_KEY)
+    string(STRIP "${NVFBC_KEY}" NVFBC_KEY)
+endif()
+
 if (SHADOW_CAST_IPO_SUPPORTED)
     message(STATUS "IPO supported. Enabling")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
