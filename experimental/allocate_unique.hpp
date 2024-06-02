@@ -40,7 +40,7 @@ auto allocate_unique(Allocator const& alloc, Args&&... args)
     try {
         AllocatorTraits::construct(
             rebound_alloc, p, std::forward<Args>(args)...);
-        return std::unique_ptr { p, Deleter { rebound_alloc } };
+        return std::unique_ptr<T, Deleter> { p, Deleter { rebound_alloc } };
     }
     catch (...) {
         AllocatorTraits::deallocate(rebound_alloc, p, 1);
