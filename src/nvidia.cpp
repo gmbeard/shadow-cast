@@ -1,4 +1,5 @@
 #include "nvidia.hpp"
+#include "config.hpp"
 #include "nvidia/NvFBC.h"
 #include "nvidia/cuda.hpp"
 #include "utils/base64.hpp"
@@ -130,7 +131,7 @@ auto create_cuda_context(NvCuda cuda) -> CUcontextPtr
 
 auto create_nvfbc_session(sc::NvFBC instance) -> sc::NvFBCSessionHandlePtr
 {
-    std::string_view nvfb_key;
+    std::string_view nvfb_key = kNvFBCKey;
     if (auto const* env_var = std::getenv(kNvFBCKeyEnvVar); env_var) {
         nvfb_key = env_var;
     }

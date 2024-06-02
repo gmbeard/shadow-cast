@@ -15,6 +15,7 @@ enum struct ByteOrder
 [[maybe_unused]] auto constexpr kByteOrder = ByteOrder::@SHADOW_CAST_BYTE_ORDER@;
 [[maybe_unused]] auto constexpr kShadowCastProg = "@PROJECT_NAME@";
 [[maybe_unused]] auto constexpr kShadowCastVersion = "@PROJECT_VERSION@";
+[[maybe_unused]] auto constexpr kNvFBCKey = "@NVFBC_KEY@";
 // clang-format on
 } // namespace sc
 
