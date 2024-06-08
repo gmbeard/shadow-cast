@@ -68,7 +68,7 @@ struct Parameters
     std::string output_file;
     bool strict_frame_time { true };
     std::optional<CaptureResolution> resolution { std::nullopt };
-    CaptureQuality quality { CaptureQuality::high };
+    std::int32_t quality { 7 };
     std::size_t bitrate { 0 };
 };
 
