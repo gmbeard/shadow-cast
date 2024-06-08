@@ -2,13 +2,25 @@
 #include "av/buffer.hpp"
 #include "av/codec.hpp"
 #include "cuda.hpp"
+#include "logging.hpp"
 #include "utils/cmd_line.hpp"
+#include <cstdint>
+#include <libavcodec/codec.h>
 #include <libavutil/dict.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/rational.h>
 
 namespace
 {
+
+auto convert_quality_to_cq(std::int32_t setting) -> int
+{
+    auto const transposed_range = 40 - 18;
+    auto const transposed =
+        ((static_cast<float>(setting) - 1) / (10 - 1)) * transposed_range;
+
+    return transposed_range - static_cast<int>(transposed) + 18;
+}
 
 /**
  * Creates the encoding context
@@ -115,26 +127,9 @@ auto create_encoder_context(sc::Parameters const& params,
         av_dict_set(&options, "coder", "cabac", 0);
     }
     if (params.bitrate == 0) {
-        int cq = 0;
         av_dict_set(&options, "rc", "vbr", 0);
-        switch (params.quality) {
-        case sc::CaptureQuality::minimum:
-            cq = 43;
-            break;
-        case sc::CaptureQuality::low:
-            cq = 37;
-            break;
-        case sc::CaptureQuality::medium:
-            cq = 31;
-            break;
-        case sc::CaptureQuality::high:
-            cq = 25;
-            break;
-        case sc::CaptureQuality::maximum:
-            cq = 19;
-            break;
-        }
-
+        auto const cq = convert_quality_to_cq(params.quality);
+        sc::log(sc::LogLevel::info, "NVENC using CBR, cq value %i", cq);
         av_dict_set_int(&options, "cq", cq, 0);
     }
     else {

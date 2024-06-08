@@ -56,24 +56,6 @@ auto get_resolution(std::string_view param, sc::CaptureResolution& res) noexcept
     return true;
 }
 
-auto quality_string_value_to_enum_value(std::string_view val) noexcept
-    -> sc::CaptureQuality
-{
-    if (val == "min")
-        return sc::CaptureQuality::minimum;
-
-    if (val == "low")
-        return sc::CaptureQuality::low;
-
-    if (val == "medium")
-        return sc::CaptureQuality::medium;
-
-    if (val == "high")
-        return sc::CaptureQuality::high;
-
-    return sc::CaptureQuality::maximum;
-}
-
 template <typename T>
 auto safe_multiply(T& source, T mult) noexcept -> bool
 {
@@ -171,12 +153,12 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .short_name = 'q',
         .long_name = "--quality",
         .option = sc::CmdLineOption::quality,
-        .flags = sc::cmdline::VALUE_REQUIRED,
-        .validation = construct<sc::AcceptableValues>(
-            "min", "low", "medium", "high", "max"),
+        .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
+        .validation = sc::ValidRange { 1, 10 },
         .description =
-            "Capture quality. Accepted values are 'low', 'medium', or 'high'. "
-            "Default 'high'. This implies constant quality mode.",
+            "Capture quality. Accepted values are 1 to 10 inclusive. "
+            "10 is the highest quality. "
+            "Default 7. This implies constant quality mode.",
     },
 
     /* Capture resolution...
@@ -513,9 +495,8 @@ auto get_parameters(CmdLine const& cmdline) noexcept
         .sample_rate = cmdline.get_option_value_or_default(
             sc::CmdLineOption::sample_rate, 48'000, sc::number_value),
         .output_file = cmdline.args().size() ? cmdline.args()[0] : "",
-        .quality = quality_string_value_to_enum_value(
-            cmdline.get_option_value_or_default(sc::CmdLineOption::quality,
-                                                "high")),
+        .quality = cmdline.get_option_value_or_default(
+            sc::CmdLineOption::quality, 7, sc::number_value),
     };
 
     if (cmdline.has_option(CmdLineOption::resolution)) {

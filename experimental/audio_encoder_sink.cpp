@@ -44,10 +44,7 @@ auto create_encoder_context(sc::Parameters const& params) -> sc::CodecContextPtr
     audio_encoder_context->sample_rate = params.sample_rate;
     audio_encoder_context->sample_fmt =
         sc::convert_to_libav_format(supported_formats.front());
-    audio_encoder_context->bit_rate =
-        params.quality == sc::CaptureQuality::minimum ? 64'000
-        : params.quality == sc::CaptureQuality::low   ? 96'000
-                                                      : 128'000;
+    audio_encoder_context->bit_rate = 128'000;
     audio_encoder_context->time_base = av_make_q(1, params.sample_rate);
     audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
