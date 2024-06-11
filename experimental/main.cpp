@@ -1,4 +1,5 @@
 #include "./audio_encoder_sink.hpp"
+#include "./egl.hpp"
 #include "./media_container.hpp"
 #include "./nvfbc_capture_source.hpp"
 #include "./pipewire_capture_source.hpp"
@@ -9,6 +10,10 @@
 #include "nvenc_encoder_sink.hpp"
 #include "session.hpp"
 #include "utils/cmd_line.hpp"
+#include "utils/scope_guard.hpp"
+#include <GL/gl.h>
+#include <GL/glext.h>
+#include <X11/Xlib.h>
 #include <signal.h>
 
 #define AUDIO_ENABLED 1
@@ -20,7 +25,31 @@ auto app(sc::Parameters params) -> void
     exios::ContextThread execution_context;
     exios::Signal signal { execution_context, SIGINT };
     exios::Event cancellation_event { execution_context };
-    sc::X11Desktop desktop;
+    auto gfx = sc::bind_gfx(sc::X11Desktop {});
+
+    gfx.with_egl_context_args([](auto egl_display, auto, auto) {
+        auto egl_client_apis =
+            sc::egl::lib().eglQueryString(egl_display, EGL_CLIENT_APIS);
+        sc::log(sc::LogLevel::debug, "EGL Client APIs: %s", egl_client_apis);
+
+        auto egl_vendor =
+            sc::egl::lib().eglQueryString(egl_display, EGL_VENDOR);
+        sc::log(sc::LogLevel::debug, "EGL Vendor: %s", egl_vendor);
+
+        // auto egl_extensions =
+        //     sc::egl::lib().eglQueryString(egl_display, EGL_EXTENSIONS);
+        // sc::log(sc::LogLevel::debug, "EGL Extensions: %s", egl_extensions);
+
+        auto gl_renderer = sc::gl::lib().glGetString(GL_RENDERER);
+        auto gl_vendor = sc::gl::lib().glGetString(GL_VENDOR);
+        sc::log(sc::LogLevel::info, "GPU: %s (%s)", gl_renderer, gl_vendor);
+        // int num_extensions = 0;
+        // sc::gl::lib().glGetIntegerv(GL_NUM_EXTENSIONS, &num_extensions);
+        // for (auto i = 0; i < num_extensions; ++i) {
+        //     auto gl_extension = sc::gl::lib().glGetStringi(GL_EXTENSIONS, i);
+        //     sc::log(sc::LogLevel::debug, "GL Extensions %s", gl_extension);
+        // }
+    });
 
     signal.wait([&](exios::SignalResult) {
         sc::log(sc::LogLevel::info, "Signal received");
@@ -31,7 +60,7 @@ auto app(sc::Parameters params) -> void
 
     sc::run_session(execution_context,
                     cancellation_event,
-                    desktop,
+                    gfx.native_display(),
                     params,
                     cuda_ctx.get(),
                     [&](exios::Result<std::error_code>) {

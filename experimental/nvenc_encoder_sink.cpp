@@ -129,10 +129,13 @@ auto create_encoder_context(sc::Parameters const& params,
     if (params.bitrate == 0) {
         av_dict_set(&options, "rc", "vbr", 0);
         auto const cq = convert_quality_to_cq(params.quality);
-        sc::log(sc::LogLevel::info, "NVENC using CBR, cq value %i", cq);
+        sc::log(sc::LogLevel::info, "NVENC using VBR, cq value %i", cq);
         av_dict_set_int(&options, "cq", cq, 0);
     }
     else {
+        sc::log(sc::LogLevel::info,
+                "NVENC using CBR, %lluKbps",
+                params.bitrate / 1'000);
         av_dict_set(&options, "rc", "cbr", 0);
     }
 

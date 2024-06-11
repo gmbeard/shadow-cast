@@ -30,6 +30,7 @@ add_library(shadow-cast-obj
     io/unix_socket.cpp
 
     platform/egl.cpp
+    platform/gl.cpp
     platform/wayland.cpp
 
     services/audio_service.cpp

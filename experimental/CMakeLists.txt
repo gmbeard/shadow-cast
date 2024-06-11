@@ -7,6 +7,7 @@ target_sources(
         audio_encoder_sink.cpp
         capture.cpp
         cuda.cpp
+        egl.cpp
         logging.cpp
         main.cpp
         media_container.cpp
