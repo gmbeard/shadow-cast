@@ -48,8 +48,9 @@ In order to build *Shadow Cast* you will need a C++20 compiler, plus the followi
 - ffmpeg / libav
 - X11
 - Pipewire
-- Wayland (wayland-client, wayland-egl)
+- Wayland (wayland-client, wayland-egl, wayland-devel)
 - libdrm
+- libglvnd
 
 These can usually be obtained through your Linux distribution's package manager using the `-devel` packages of each.
 
