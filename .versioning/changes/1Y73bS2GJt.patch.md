@@ -1,0 +1,1 @@
+Users now are now no longer required to have the `shadow-cast-kms` executable in their `$PATH` if installed to a custom location. The process will look for it in the same location as the main `shadow-cast` executable.
