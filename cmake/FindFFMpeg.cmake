@@ -11,7 +11,7 @@ function(try_find_ffmpeg_targets)
     )
 
     foreach(FFMPEG_COMPONENT ${EXPORT_FFMPEG_NAMES})
-        pkg_check_modules(PC_${FFMPEG_COMPONENT}_CODEC QUIET "lib${FFMPEG_COMPONENT}")
+        pkg_check_modules(PC_${FFMPEG_COMPONENT} QUIET "lib${FFMPEG_COMPONENT}")
 
         find_path(FFMpeg_${FFMPEG_COMPONENT}_INCLUDE_DIR
             NAMES ${FFMPEG_COMPONENT}.h
