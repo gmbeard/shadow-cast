@@ -1,18 +1,31 @@
 #include "platform/egl.hpp"
 #include "error.hpp"
+#include "platform/opengl.hpp"
 #include "utils/symbol.hpp"
 
-namespace sc
-{
+#define TRY_ATTACH_EXTENSION_SYMBOL(target, name, egl)                         \
+    ::attach_extension_symbol(target, name, egl)
 
-auto load_egl() -> EGL
+namespace
+{
+template <typename F>
+auto attach_extension_symbol(F** fn, char const* name, sc::EGL egl) -> void
+{
+    *fn = reinterpret_cast<F*>(egl.eglGetProcAddress(name));
+    if (!*fn)
+        throw sc::ModuleError {
+            std::string { "Couldn't load extension symbol: " } + name
+        };
+}
+
+auto load_egl() -> sc::EGL
 {
     auto lib = dlopen("libEGL.so.1", RTLD_LAZY);
     if (!lib)
-        throw ModuleError { std::string { "Couldn't load libEGL.so.1: " } +
-                            dlerror() };
+        throw sc::ModuleError { std::string { "Couldn't load libEGL.so.1: " } +
+                                dlerror() };
 
-    EGL egl {};
+    sc::EGL egl {};
     TRY_ATTACH_SYMBOL(&egl.eglCreateImage, "eglCreateImage", lib);
     TRY_ATTACH_SYMBOL(&egl.eglDestroyImage, "eglDestroyImage", lib);
     TRY_ATTACH_SYMBOL(&egl.eglGetError, "eglGetError", lib);
@@ -34,6 +47,28 @@ auto load_egl() -> EGL
     TRY_ATTACH_SYMBOL(&egl.eglSwapBuffers, "eglSwapBuffers", lib);
 
     return egl;
+}
+
+} // namespace
+
+namespace sc
+{
+
+auto egl() -> EGL const&
+{
+    static EGL egl_module = load_egl();
+    return egl_module;
+}
+
+auto load_gl_extensions() -> void
+{
+    auto& opengl = detail::get_opengl_module();
+    /* NOTE:
+     *  Extensions...
+     */
+    TRY_ATTACH_EXTENSION_SYMBOL(&opengl.glEGLImageTargetTexture2DOES,
+                                "glEGLImageTargetTexture2DOES",
+                                egl());
 }
 
 } // namespace sc

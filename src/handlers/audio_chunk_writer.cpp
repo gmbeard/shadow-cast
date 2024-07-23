@@ -25,7 +25,9 @@ ChunkWriter::ChunkWriter(AVCodecContext* codec_context,
 
 auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
 {
-    assert(static_cast<int>(chunk.sample_count) == codec_context_->frame_size);
+    SC_EXPECT(!codec_context_->frame_size ||
+              static_cast<int>(chunk.sample_count) ==
+                  codec_context_->frame_size);
     sc::SampleFormat const sample_format =
         sc::convert_from_libav_format(codec_context_->sample_fmt);
 

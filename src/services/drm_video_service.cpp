@@ -1,8 +1,14 @@
 #include "services/drm_video_service.hpp"
 #include "drm.hpp"
+#include "gl/object.hpp"
+#include "gl/texture.hpp"
 #include "io/accept_handler.hpp"
 #include "io/message_receiver.hpp"
 #include "io/message_sender.hpp"
+#include "nvidia/cuda.hpp"
+#include "platform/egl.hpp"
+#include "platform/opengl.hpp"
+#include "services/color_converter.hpp"
 #include "utils/contracts.hpp"
 #include "utils/result.hpp"
 #include "utils/scope_guard.hpp"
@@ -56,11 +62,11 @@ auto get_drm_data(sc::UnixSocket& socket, std::size_t timeout, sigset_t* mask)
     return sc::result_ok(response);
 }
 
-auto register_egl_image_in_cuda(sc::NvCuda const& nvcuda,
-                                CUcontext ctx,
-                                EGLImage egl_image,
-                                CUgraphicsResource& cuda_gfx_resource,
-                                CUarray& cuda_array) -> void
+auto register_gl_texture_in_cuda(sc::NvCuda const& nvcuda,
+                                 CUcontext ctx,
+                                 GLuint texture_name,
+                                 CUgraphicsResource& cuda_gfx_resource,
+                                 CUarray& cuda_array) -> void
 {
     using namespace std::literals::string_literals;
 
@@ -70,9 +76,10 @@ auto register_egl_image_in_cuda(sc::NvCuda const& nvcuda,
     /*CUresult res = */ nvcuda.cuCtxPushCurrent_v2(ctx);
     SC_SCOPE_GUARD([&] { nvcuda.cuCtxPopCurrent_v2(&old_ctx); });
 
-    if (auto const r = nvcuda.cuGraphicsEGLRegisterImage(
+    if (auto const r = nvcuda.cuGraphicsGLRegisterImage(
             &cuda_gfx_resource,
-            egl_image,
+            texture_name,
+            GL_TEXTURE_2D,
             CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY);
         r != CUDA_SUCCESS) {
         nvcuda.cuGetErrorString(r, &err_str);
@@ -83,6 +90,13 @@ auto register_egl_image_in_cuda(sc::NvCuda const& nvcuda,
 
     if (auto const r = nvcuda.cuGraphicsResourceSetMapFlags(
             cuda_gfx_resource, CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
+        r != CUDA_SUCCESS) {
+        nvcuda.cuGetErrorString(r, &err_str);
+        throw std::runtime_error { "CUDA: Failed to set map flags - "s +
+                                   err_str };
+    }
+
+    if (auto const r = nvcuda.cuGraphicsMapResources(1, &cuda_gfx_resource, 0);
         r != CUDA_SUCCESS) {
         nvcuda.cuGetErrorString(r, &err_str);
         throw std::runtime_error { "CUDA: Failed to set map flags - "s +
@@ -128,7 +142,8 @@ DRMVideoService::DRMVideoService(
     Wayland& wayland,
     WaylandEGL& plaform_egl SC_METRICS_PARAM_DEFINE(MetricsService*,
                                                     metrics_service)) noexcept
-    : nvcuda_ { nvcuda }
+    : color_converter_ { wayland.output_width, wayland.output_height }
+    , nvcuda_ { nvcuda }
     , cuda_ctx_ { cuda_ctx }
     , egl_ { &egl }
     , wayland_ { &wayland }
@@ -149,6 +164,8 @@ auto DRMVideoService::on_init(ReadinessRegister reg) -> void
      */
     sigemptyset(&drm_proc_mask_);
     sigaddset(&drm_proc_mask_, SIGCHLD);
+
+    color_converter_.initialize();
 
     auto server_socket = sc::socket::bind(kSocketPath);
 
@@ -238,8 +255,8 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
         });
 
     // clang-format off
-    const std::intptr_t img_attr[] = {
-        EGL_LINUX_DRM_FOURCC_EXT, DRM_FORMAT_ARGB8888 /*descriptor.pixel_format*/,
+    std::intptr_t const img_attr[] = {
+        EGL_LINUX_DRM_FOURCC_EXT, descriptor->pixel_format,
         EGL_WIDTH, descriptor->width,
         EGL_HEIGHT, descriptor->height,
         EGL_DMA_BUF_PLANE0_FD_EXT, descriptor->fd,
@@ -251,28 +268,38 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
     };
     // clang-format on
 
-    EGLImage image =
+    EGLImage input_image =
         self.egl_->eglCreateImage(self.platform_egl_->egl_display.get(),
                                   EGL_NO_CONTEXT,
                                   EGL_LINUX_DMA_BUF_EXT,
                                   static_cast<EGLClientBuffer>(nullptr),
                                   img_attr);
 
-    if (image == EGL_NO_IMAGE) {
-        throw std::runtime_error { "eglCreateImage failed: " +
+    if (input_image == EGL_NO_IMAGE) {
+        throw std::runtime_error { "eglCreateImage input failed: " +
                                    std::to_string(self.egl_->eglGetError()) };
     }
 
+    opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                 self.color_converter_.input_texture(),
+                 [&](auto) {
+                     gl().glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES,
+                                                       input_image);
+                 });
+
+    self.color_converter_.convert();
+
     SC_SCOPE_GUARD([&] {
         self.egl_->eglDestroyImage(self.platform_egl_->egl_display.get(),
-                                   image);
+                                   input_image);
     });
 
-    register_egl_image_in_cuda(self.nvcuda_,            /* in */
-                               self.cuda_ctx_,          /* in */
-                               image,                   /* in */
-                               self.cuda_gfx_resource_, /* out */
-                               self.cuda_array_);       /* out */
+    register_gl_texture_in_cuda(
+        self.nvcuda_,                                  /* in */
+        self.cuda_ctx_,                                /* in */
+        self.color_converter_.output_texture().name(), /* in */
+        self.cuda_gfx_resource_,                       /* out */
+        self.cuda_array_);                             /* out */
 
     SC_SCOPE_GUARD([&] {
         CUcontext old_ctx;

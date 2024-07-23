@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <initializer_list>
 #include <iostream>
+#include <libavutil/pixfmt.h>
 #include <memory>
 #include <signal.h>
 #include <thread>
@@ -172,8 +173,11 @@ auto run_loop(sc::Context& main,
 auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     -> void
 {
+    sc::load_gl_extensions();
+
     auto nvcudalib = sc::load_cuda();
-    auto egl = sc::load_egl();
+    auto egl = sc::egl();
+
     auto wayland = sc::initialize_wayland(std::move(display));
     auto wayland_egl = sc::initialize_wayland_egl(egl, *wayland);
 
@@ -261,7 +265,7 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
         nullptr, /*buffer_pool.get(),*/
         { .width = wayland->output_width, .height = wayland->output_height },
         params.frame_time,
-        AV_PIX_FMT_BGR0);
+        AV_PIX_FMT_RGB0);
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
         format_context.get(), video_encoder_context->codec) };
@@ -321,8 +325,10 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
         return std::make_unique<sc::AudioService>(
             supported_formats.front(),
             params.sample_rate,
-            audio_encoder_context->frame_size SC_METRICS_PARAM_USE(
-                metrics_ctx.services().use_if<sc::MetricsService>()));
+            audio_encoder_context->frame_size
+                ? audio_encoder_context->frame_size
+                : 2048 SC_METRICS_PARAM_USE(
+                      metrics_ctx.services().use_if<sc::MetricsService>()));
     });
 
     ctx.services().add_from_factory<sc::DRMVideoService>([&] {
@@ -540,8 +546,10 @@ auto run(sc::Parameters const& params) -> void
         return std::make_unique<sc::AudioService>(
             supported_formats.front(),
             params.sample_rate,
-            audio_encoder_context->frame_size SC_METRICS_PARAM_USE(
-                metrics_ctx.services().use_if<sc::MetricsService>()));
+            audio_encoder_context->frame_size
+                ? audio_encoder_context->frame_size
+                : 2048 SC_METRICS_PARAM_USE(
+                      metrics_ctx.services().use_if<sc::MetricsService>()));
     });
 
     ctx.services().add_from_factory<sc::VideoService>([&] {
