@@ -52,8 +52,6 @@ decltype(auto) log()
     }
 }
 
-[[nodiscard]] auto is_drm_available() -> bool { return drmAvailable() == 1; }
-
 [[nodiscard]] auto get_drm_device_path() -> std::string
 {
     int const max_devices = 10;
@@ -306,9 +304,6 @@ auto get_plane_descriptors(int drm_fd) -> OutgoingMessage
 auto app(std::span<char const*> args) -> void
 {
     sc::block_signals({ SIGINT });
-
-    if (!is_drm_available())
-        throw std::runtime_error { "DRM not available" };
 
     auto const device_path = get_drm_device_path();
 
