@@ -7,6 +7,7 @@
 #include "utils/result.hpp"
 #include "utils/scope_guard.hpp"
 #include <algorithm>
+#include <filesystem>
 #include <libdrm/drm_fourcc.h>
 #include <system_error>
 #include <vector>
@@ -97,6 +98,24 @@ auto register_egl_image_in_cuda(sc::NvCuda const& nvcuda,
     }
 }
 
+auto find_drm_helper_binary()
+{
+    using namespace std::string_literals;
+    namespace fs = std::filesystem;
+
+    /* Construct a path to the KMS binary using the path
+     * of the main executable...
+     */
+    auto kms_bin_dir = fs::read_symlink("/proc/self/exe");
+    kms_bin_dir.remove_filename();
+    auto const kms_bin_path = kms_bin_dir / kDRMBin;
+    if (!fs::exists(kms_bin_path))
+        throw new std::runtime_error { "Couldn't locate DRM helper at "s +
+                                       kms_bin_path.string() };
+
+    return kms_bin_path;
+}
+
 } // namespace
 
 namespace sc
@@ -149,7 +168,7 @@ auto DRMVideoService::on_init(ReadinessRegister reg) -> void
     /* Spawn the DRM child process and wait for it
      * to attach itself...
      */
-    std::vector<std::string> args { kDRMBin, kSocketPath };
+    std::vector<std::string> args { find_drm_helper_binary(), kSocketPath };
     drm_process_ = sc::spawn_process(std::span { args.data(), args.size() });
     auto socket_result = server_socket.use_with(
         sc::AcceptHandler { kDRMConnectTimeoutMs, &drm_proc_mask_ });

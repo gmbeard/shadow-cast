@@ -24,7 +24,7 @@ Process::Process(Process&& other) noexcept
 {
 }
 
-Process::~Process() { SC_EXPECT(pid_ == -1); }
+Process::~Process() { static_cast<void>(terminate_and_wait()); }
 
 auto Process::operator=(Process&& other) noexcept -> Process&
 {
@@ -41,11 +41,20 @@ auto swap(Process& lhs, Process& rhs) noexcept -> void
     swap(lhs.pid_, rhs.pid_);
 }
 
-auto Process::terminate() noexcept -> void { ::kill(pid_, SIGINT); }
+auto Process::terminate() noexcept -> void
+{
+    if (pid_ <= 0)
+        return;
+
+    ::kill(pid_, SIGINT);
+}
 
 auto Process::wait() noexcept -> int
 {
     SC_SCOPE_GUARD([&] { pid_ = -1; });
+    if (pid_ <= 0)
+        return 0;
+
     int wstatus;
     ::waitpid(pid_, &wstatus, WEXITED);
     if (!WIFEXITED(wstatus))
