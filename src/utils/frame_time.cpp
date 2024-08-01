@@ -31,9 +31,9 @@ auto FrameTime::fps() const noexcept -> float
     return static_cast<float>(kNsPerSec) / frame_time_nanoseconds_;
 }
 
-auto FrameTime::per_second_ratio() const noexcept -> AVRational
+auto FrameTime::fps_ratio() const noexcept -> AVRational
 {
-    return AVRational { .num = 1, .den = kNsPerSec };
+    return av_make_q(1, static_cast<int>(fps()));
 }
 
 auto truncate_to_millisecond(FrameTime const& ft) noexcept -> FrameTime

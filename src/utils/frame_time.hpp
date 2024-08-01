@@ -12,7 +12,7 @@ struct FrameTime
     auto value() const noexcept -> std::uint64_t;
     auto value_in_milliseconds() const noexcept -> std::uint64_t;
     auto fps() const noexcept -> float;
-    auto per_second_ratio() const noexcept -> AVRational;
+    auto fps_ratio() const noexcept -> AVRational;
 
 private:
     std::uint64_t frame_time_nanoseconds_;
