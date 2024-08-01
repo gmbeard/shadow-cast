@@ -16,7 +16,7 @@ DRMVideoFrameWriter::DRMVideoFrameWriter(AVCodecContext* codec_context,
 
 auto DRMVideoFrameWriter::operator()(CUarray data,
                                      NvCuda const& cuda,
-                                     std::uint64_t frame_time) -> void
+                                     std::uint64_t /*frame_time*/) -> void
 {
     SC_EXPECT(data);
 
@@ -64,7 +64,7 @@ auto DRMVideoFrameWriter::operator()(CUarray data,
         };
     }
 
-    frame->pts = frame_time * frame_number_++;
+    frame->pts = frame_number_++;
 
     encoder_.write_frame(std::move(encoder_frame));
 }

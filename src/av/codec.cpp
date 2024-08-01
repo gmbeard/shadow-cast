@@ -30,7 +30,7 @@ auto create_video_encoder(std::string const& encoder_name,
     sc::CodecContextPtr video_encoder_context { avcodec_alloc_context3(
         video_encoder.get()) };
     video_encoder_context->codec_id = video_encoder->id;
-    auto const timebase = ft.per_second_ratio();
+    auto const timebase = ft.fps_ratio();
     video_encoder_context->time_base = timebase;
     video_encoder_context->framerate.num = timebase.den;
     video_encoder_context->framerate.den = timebase.num;

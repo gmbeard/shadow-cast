@@ -17,7 +17,7 @@ VideoFrameWriter::VideoFrameWriter(AVCodecContext* codec_context,
 
 auto VideoFrameWriter::operator()(CUdeviceptr cu_device_ptr,
                                   NVFBC_FRAME_GRAB_INFO,
-                                  std::uint64_t frame_time) -> void
+                                  std::uint64_t /*frame_time*/) -> void
 {
     auto encoder_frame =
         encoder_.prepare_frame(codec_context_.get(), stream_.get());
@@ -42,7 +42,7 @@ auto VideoFrameWriter::operator()(CUdeviceptr cu_device_ptr,
     frame->colorspace = codec_context_->colorspace;
     frame->chroma_location = codec_context_->chroma_sample_location;
 
-    frame->pts = frame_time * frame_number_++;
+    frame->pts = frame_number_++;
 
     encoder_.write_frame(std::move(encoder_frame));
 }
