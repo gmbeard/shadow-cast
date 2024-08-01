@@ -74,8 +74,8 @@ option(
 )
 
 option(
-    SHADOW_CAST_ENABLE_METRICS
-    "Enable metric collection for ${PROJECT_NAME}"
+    SHADOW_CAST_ENABLE_HISTOGRAMS
+    "Enable audio and video histograms for ${PROJECT_NAME}"
     OFF
 )
 

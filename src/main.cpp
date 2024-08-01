@@ -2,6 +2,7 @@
 #include "utils/frame_time.hpp"
 
 #include <X11/Xlib.h>
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -13,7 +14,12 @@
 #include <signal.h>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+#include "metrics/formatting.hpp"
+#include "metrics/metrics.hpp"
+#endif
 
 #if FF_API_BUFFER_SIZE_T
 using BufferSize = int;
@@ -75,7 +81,7 @@ struct DestroyCaptureSessionGuard
 
 auto run_loop(sc::Context& main,
               sc::Context& media,
-              sc::Context& audio SC_METRICS_PARAM_DEFINE(sc::Context&, metrics),
+              sc::Context& audio,
               sc::BorrowedPtr<AVCodecContext> video_codec,
               sc::BorrowedPtr<AVStream> video_stream,
               sc::BorrowedPtr<AVCodecContext> audio_codec,
@@ -86,29 +92,12 @@ auto run_loop(sc::Context& main,
     sc::Encoder encoder { media };
 
     auto const stop = [&] {
-#ifdef SHADOW_CAST_ENABLE_METRICS
-        metrics.request_stop();
-#endif
         main.request_stop();
         audio.request_stop();
     };
 
     main.services().add<sc::SignalService>(sc::SignalService {});
     add_signal_handler(main, SIGINT, [&](std::uint32_t) { stop(); });
-
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    auto metrics_thread = std::thread([&] {
-        SC_SCOPE_GUARD([&] { stop(); });
-        try {
-            metrics.run();
-        }
-        catch (...) {
-            std::lock_guard lock { exception_mutex };
-            if (!ex)
-                ex = std::current_exception();
-        }
-    });
-#endif
 
     auto media_thread = std::thread([&] {
         SC_SCOPE_GUARD([&] { stop(); });
@@ -148,9 +137,6 @@ auto run_loop(sc::Context& main,
 
     std::cerr << "Finalizing output. Please wait...\n";
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    metrics_thread.join();
-#endif
     audio_thread.join();
 
     try {
@@ -302,12 +288,6 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
                             sc::av_error_to_string(ret) };
     }
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    sc::Context metrics_ctx { params.frame_time };
-    metrics_ctx.services().add_from_factory<sc::MetricsService>([&] {
-        return std::make_unique<sc::MetricsService>(params.output_file);
-    });
-#endif
     sc::Context ctx { params.frame_time };
     sc::Context audio_ctx { params.frame_time };
     sc::Context media_ctx { params.frame_time };
@@ -316,9 +296,6 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     add_signal_handler(ctx, SIGINT, [&](std::uint32_t) {
         ctx.request_stop();
         audio_ctx.request_stop();
-#ifdef SHADOW_CAST_ENABLE_METRICS
-        metrics_ctx.request_stop();
-#endif
     });
 
     audio_ctx.services().add_from_factory<sc::AudioService>([&] {
@@ -327,24 +304,16 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
             params.sample_rate,
             audio_encoder_context->frame_size
                 ? audio_encoder_context->frame_size
-                : 2048 SC_METRICS_PARAM_USE(
-                      metrics_ctx.services().use_if<sc::MetricsService>()));
+                : 2048);
     });
 
     ctx.services().add_from_factory<sc::DRMVideoService>([&] {
         return std::make_unique<sc::DRMVideoService>(
-            nvcudalib,
-            cuda_ctx.get(),
-            egl,
-            *wayland,
-            wayland_egl SC_METRICS_PARAM_USE(
-                metrics_ctx.services().use_if<sc::MetricsService>()));
+            nvcudalib, cuda_ctx.get(), egl, *wayland, wayland_egl);
     });
 
     media_ctx.services().add_from_factory<sc::EncoderService>([&] {
-        return std::make_unique<sc::EncoderService>(
-            format_context.get() SC_METRICS_PARAM_USE(
-                metrics_ctx.services().use_if<sc::MetricsService>()));
+        return std::make_unique<sc::EncoderService>(format_context.get());
     });
 
     sc::Encoder media_writer { media_ctx };
@@ -366,7 +335,7 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
 
     run_loop(ctx,
              media_ctx,
-             audio_ctx SC_METRICS_PARAM_USE(metrics_ctx),
+             audio_ctx,
              video_encoder_context.get(),
              video_stream.get(),
              audio_encoder_context.get(),
@@ -526,20 +495,11 @@ auto run(sc::Parameters const& params) -> void
     sc::Context ctx { params.frame_time };
     sc::Context audio_ctx { params.frame_time };
     sc::Context media_ctx { params.frame_time };
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    sc::Context metrics_ctx { params.frame_time };
-    metrics_ctx.services().add_from_factory<sc::MetricsService>([&] {
-        return std::make_unique<sc::MetricsService>(params.output_file);
-    });
-#endif
 
     ctx.services().add<sc::SignalService>(sc::SignalService {});
     add_signal_handler(ctx, SIGINT, [&](std::uint32_t) {
         ctx.request_stop();
         audio_ctx.request_stop();
-#ifdef SHADOW_CAST_ENABLE_METRICS
-        metrics_ctx.request_stop();
-#endif
     });
 
     audio_ctx.services().add_from_factory<sc::AudioService>([&] {
@@ -548,22 +508,16 @@ auto run(sc::Parameters const& params) -> void
             params.sample_rate,
             audio_encoder_context->frame_size
                 ? audio_encoder_context->frame_size
-                : 2048 SC_METRICS_PARAM_USE(
-                      metrics_ctx.services().use_if<sc::MetricsService>()));
+                : 2048);
     });
 
     ctx.services().add_from_factory<sc::VideoService>([&] {
         return std::make_unique<sc::VideoService>(
-            nvfbc,
-            cuda_ctx.get(),
-            nvfbc_instance.get() SC_METRICS_PARAM_USE(
-                metrics_ctx.services().use_if<sc::MetricsService>()));
+            nvfbc, cuda_ctx.get(), nvfbc_instance.get());
     });
 
     media_ctx.services().add_from_factory<sc::EncoderService>([&] {
-        return std::make_unique<sc::EncoderService>(
-            format_context.get() SC_METRICS_PARAM_USE(
-                metrics_ctx.services().use_if<sc::MetricsService>()));
+        return std::make_unique<sc::EncoderService>(format_context.get());
     });
 
     sc::Encoder media_writer { media_ctx };
@@ -585,7 +539,7 @@ auto run(sc::Parameters const& params) -> void
 
     run_loop(ctx,
              media_ctx,
-             audio_ctx SC_METRICS_PARAM_USE(metrics_ctx),
+             audio_ctx,
              video_encoder_context.get(),
              video_stream.get(),
              audio_encoder_context.get(),
@@ -632,6 +586,20 @@ auto main(int argc, char const** argv) -> int
         std::cerr << "ERROR: " << e.what() << '\n';
         return 1;
     }
+
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+    sc::metrics::format_histogram(
+        std::cout,
+        sc::metrics::get_histogram(sc::metrics::audio_metrics),
+        "Frame time (ns)",
+        "Audio Frame Times");
+    std::cout << '\n';
+    sc::metrics::format_histogram(
+        std::cout,
+        sc::metrics::get_histogram(sc::metrics::video_metrics),
+        "Frame time (ns)",
+        "Video Frame Times");
+#endif
 
     return 0;
 }

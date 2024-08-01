@@ -42,13 +42,14 @@ add_library(shadow-cast-obj
     platform/opengl.cpp
     platform/wayland.cpp
 
+    metrics/metrics.cpp
+
     services/audio_service.cpp
     services/color_converter.cpp
     services/context.cpp
     services/drm_video_service.cpp
     services/encoder.cpp
     services/encoder_service.cpp
-    services/metrics_service.cpp
     services/readiness.cpp
     services/service.cpp
     services/service_registry.cpp

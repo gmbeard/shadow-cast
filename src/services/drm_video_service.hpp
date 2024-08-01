@@ -4,11 +4,6 @@
 #include "config.hpp"
 #include "services/color_converter.hpp"
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-#include "services/metrics_service.hpp"
-#include "utils/elapsed.hpp"
-#endif
-
 #include "drm/messaging.hpp"
 #include "io/process.hpp"
 #include "io/unix_socket.hpp"
@@ -35,8 +30,7 @@ struct DRMVideoService final : Service
                              CUcontext cuda_ctx,
                              EGL& egl,
                              Wayland& wayland,
-                             WaylandEGL& platform_egl SC_METRICS_PARAM_DECLARE(
-                                 MetricsService*)) noexcept;
+                             WaylandEGL& platform_egl) noexcept;
 
     template <typename F>
     auto set_capture_frame_handler(F&& handler) -> void
@@ -64,9 +58,6 @@ private:
     std::optional<CaptureFrameReceiverType> frame_handler_;
     CUgraphicsResource cuda_gfx_resource_ { nullptr };
     CUarray cuda_array_ { nullptr };
-    SC_METRICS_MEMBER_DECLARE(MetricsService*, metrics_service_);
-    SC_METRICS_MEMBER_DECLARE(Elapsed, frame_timer_);
-    SC_METRICS_MEMBER_DECLARE(std::size_t, metrics_start_time_);
     std::uint64_t frame_time_ { 0 };
 };
 
