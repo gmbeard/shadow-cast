@@ -29,6 +29,7 @@ make_test(
     SOURCES gl_texture_tests.cpp
     ENABLE_IF wayland all
     LABELS wayland)
+make_test(NAME histogram_tests SOURCES histogram_tests.cpp)
 
 add_custom_target(
     pixel_data

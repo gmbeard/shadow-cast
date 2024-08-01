@@ -16,7 +16,7 @@
 ### 1. Test Parameters
 My current go-to test for *Shadow Cast* is the game *Ghostrunner*. This game is very fast-paced with lots of visual movement so it seems to drive the video encoder pretty hard. Also, it has very low latency audio meaning the audio stream will be delivered in very small audio packets (~128 samples).
 
-All metrics have been collected by compiling *Shadow Cast* with the `-DSHADOW_CAST_ENABLE_METRICS=ON` CMake configuration option. Running the application with this option enabled will emit a supplementary data file in the media output directory in *csv* format. Each metric row is a data point describing how long it took to process the frame. This data contains...
+All metrics have been collected by compiling *Shadow Cast* with the (now obsolete) `-DSHADOW_CAST_ENABLE_METRICS=ON` CMake configuration option. Running the application with this option enabled will emit a supplementary data file in the media output directory in *csv* format. Each metric row is a data point describing how long it took to process the frame. This data contains...
 
 - Metric category, either video or audio
 - Frame no. (video) / Current sample no. (audio)

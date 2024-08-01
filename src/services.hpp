@@ -8,9 +8,6 @@
 #include "./services/drm_video_service.hpp"
 #include "./services/encoder.hpp"
 #include "./services/encoder_service.hpp"
-#ifdef SHADOW_CAST_ENABLE_METRICS
-#include "./services/metrics_service.hpp"
-#endif
 #include "./services/service.hpp"
 #include "./services/service_registry.hpp"
 #include "./services/signal_service.hpp"

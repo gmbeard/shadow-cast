@@ -19,12 +19,9 @@ std::size_t constexpr kInitialPoolSize = 16;
 namespace sc
 {
 EncoderService::EncoderService(
-    BorrowedPtr<AVFormatContext> fmt_context
-        SC_METRICS_PARAM_DEFINE(MetricsService*, metrics_service)) noexcept
-    : format_context_ { fmt_context } SC_METRICS_MEMBER_USE(metrics_service,
-                                                            metrics_service_)
-    , packet_ { av_packet_alloc() } SC_METRICS_MEMBER_USE(0,
-                                                          metrics_start_time_)
+    BorrowedPtr<AVFormatContext> fmt_context) noexcept
+    : format_context_ { fmt_context }
+    , packet_ { av_packet_alloc() }
 {
 }
 
@@ -50,9 +47,6 @@ auto EncoderService::on_init(ReadinessRegister reg) -> void
 
     pool_.fill(kInitialPoolSize);
     reg(notify_fd_, &dispatch);
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    metrics_start_time_ = global_elapsed.nanosecond_value();
-#endif
 }
 
 auto EncoderService::on_uninit() noexcept -> void
@@ -88,11 +82,6 @@ auto EncoderService::dispatch(Service& svc) -> void
         auto* ctx = stream_poll.codec_ctx;
         int response = 0;
         while (response >= 0) {
-#ifdef SHADOW_CAST_ENABLE_METRICS
-            self.frame_timer_.reset();
-            auto const frame_timestamp =
-                global_elapsed.nanosecond_value() - self.metrics_start_time_;
-#endif
             {
                 std::lock_guard lock { self.data_mutex_ };
                 response = avcodec_receive_packet(ctx, self.packet_.get());
@@ -115,15 +104,6 @@ auto EncoderService::dispatch(Service& svc) -> void
                 throw std::runtime_error { "write packet error: " +
                                            av_error_to_string(response) };
             }
-#ifdef SHADOW_CAST_ENABLE_METRICS
-            self.metrics_service_->post_time_metric(
-                { .category = static_cast<std::uint32_t>(4 - stream->index),
-                  .id = 0,
-                  .timestamp_ns = frame_timestamp,
-                  .nanoseconds = self.frame_timer_.nanosecond_value(),
-                  .frame_size = 1,
-                  .frame_count = 1 });
-#endif
         }
     }
 }

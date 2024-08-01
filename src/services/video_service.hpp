@@ -3,11 +3,6 @@
 
 #include "config.hpp"
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-#include "services/metrics_service.hpp"
-#include "utils/elapsed.hpp"
-#endif
-
 #include "nvidia.hpp"
 #include "services/service.hpp"
 #include "utils/borrowed_ptr.hpp"
@@ -25,8 +20,7 @@ struct VideoService final : Service
 
     VideoService(NvFBC,
                  BorrowedPtr<std::remove_pointer_t<CUcontext>>,
-                 NVFBC_SESSION_HANDLE SC_METRICS_PARAM_DECLARE(
-                     MetricsService*)) noexcept;
+                 NVFBC_SESSION_HANDLE) noexcept;
 
     template <typename F>
     auto set_capture_frame_handler(F&& handler) -> void
@@ -43,9 +37,6 @@ private:
     NVFBC_SESSION_HANDLE nvfbc_session_;
 
     std::optional<CaptureFrameReceiverType> receiver_;
-    SC_METRICS_MEMBER_DECLARE(MetricsService*, metrics_service_);
-    SC_METRICS_MEMBER_DECLARE(Elapsed, frame_timer_);
-    SC_METRICS_MEMBER_DECLARE(std::size_t, metrics_start_time_);
     std::uint64_t frame_time_ { 0 };
 };
 

@@ -3,11 +3,6 @@
 
 #include "config.hpp"
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-#include "services/metrics_service.hpp"
-#include "utils/elapsed.hpp"
-#endif
-
 #include "av/frame.hpp"
 #include "av/packet.hpp"
 #include "services/readiness.hpp"
@@ -51,8 +46,7 @@ private:
 
 public:
     using PoolType = SynchronizedPool<StreamPoll, EncoderPoolLifetime>;
-    EncoderService(BorrowedPtr<AVFormatContext> SC_METRICS_PARAM_DECLARE(
-        MetricsService*)) noexcept;
+    EncoderService(BorrowedPtr<AVFormatContext>) noexcept;
 
     EncoderService(EncoderService const&) = delete;
     auto operator=(EncoderService const&) -> EncoderService& = delete;
@@ -69,14 +63,11 @@ private:
     static auto dispatch(Service&) -> void;
 
     BorrowedPtr<AVFormatContext> format_context_;
-    SC_METRICS_MEMBER_DECLARE(MetricsService*, metrics_service_);
     int notify_fd_ { -1 };
     std::mutex data_mutex_;
     PacketPtr packet_;
     PoolType pool_;
     IntrusiveList<StreamPoll> pending_;
-    SC_METRICS_MEMBER_DECLARE(Elapsed, frame_timer_);
-    SC_METRICS_MEMBER_DECLARE(std::size_t, metrics_start_time_);
 };
 } // namespace sc
 

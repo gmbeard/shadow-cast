@@ -18,8 +18,8 @@
 #include <system_error>
 #include <vector>
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-#include "utils/elapsed.hpp"
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+#include "metrics/metrics.hpp"
 #endif
 
 namespace
@@ -99,7 +99,7 @@ auto register_gl_texture_in_cuda(sc::NvCuda const& nvcuda,
     if (auto const r = nvcuda.cuGraphicsMapResources(1, &cuda_gfx_resource, 0);
         r != CUDA_SUCCESS) {
         nvcuda.cuGetErrorString(r, &err_str);
-        throw std::runtime_error { "CUDA: Failed to set map flags - "s +
+        throw std::runtime_error { "CUDA: cuGraphicsMapResources failed - "s +
                                    err_str };
     }
 
@@ -107,8 +107,9 @@ auto register_gl_texture_in_cuda(sc::NvCuda const& nvcuda,
             &cuda_array, cuda_gfx_resource, 0, 0);
         r != CUDA_SUCCESS) {
         nvcuda.cuGetErrorString(r, &err_str);
-        throw std::runtime_error { "CUDA: Failed to get mapped array - "s +
-                                   err_str };
+        throw std::runtime_error {
+            "CUDA: cuGraphicsSubResourceGetMappedArray dailed - "s + err_str
+        };
     }
 }
 
@@ -135,26 +136,18 @@ auto find_drm_helper_binary()
 namespace sc
 {
 
-DRMVideoService::DRMVideoService(
-    NvCuda nvcuda,
-    CUcontext cuda_ctx,
-    EGL& egl,
-    Wayland& wayland,
-    WaylandEGL& plaform_egl SC_METRICS_PARAM_DEFINE(MetricsService*,
-                                                    metrics_service)) noexcept
+DRMVideoService::DRMVideoService(NvCuda nvcuda,
+                                 CUcontext cuda_ctx,
+                                 EGL& egl,
+                                 Wayland& wayland,
+                                 WaylandEGL& plaform_egl) noexcept
     : color_converter_ { wayland.output_width, wayland.output_height }
     , nvcuda_ { nvcuda }
     , cuda_ctx_ { cuda_ctx }
     , egl_ { &egl }
     , wayland_ { &wayland }
-    , platform_egl_ { &plaform_egl } // clang-format off
-    SC_METRICS_MEMBER_USE(metrics_service, metrics_service_)
-    SC_METRICS_MEMBER_USE(0, metrics_start_time_)
-// clang-format on
+    , platform_egl_ { &plaform_egl }
 {
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    SC_EXPECT(metrics_service_);
-#endif
 }
 
 auto DRMVideoService::on_init(ReadinessRegister reg) -> void
@@ -199,10 +192,6 @@ auto DRMVideoService::on_init(ReadinessRegister reg) -> void
 
     reg(FrameTimeRatio(1), &dispatch_frame);
     frame_time_ = reg.frame_time();
-
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    metrics_start_time_ = global_elapsed.nanosecond_value();
-#endif
 }
 
 auto DRMVideoService::on_uninit() noexcept -> void
@@ -217,11 +206,8 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
     if (!self.frame_handler_)
         return;
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    static std::size_t frame_num = 0;
-    self.frame_timer_.reset();
-    auto const frame_timestamp =
-        global_elapsed.nanosecond_value() - self.metrics_start_time_;
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+    auto const frame_start = global_elapsed.nanosecond_value();
 #endif
 
     auto const r =
@@ -316,14 +302,9 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
 
     (*self.frame_handler_)(self.cuda_array_, self.nvcuda_, self.frame_time_);
 
-#ifdef SHADOW_CAST_ENABLE_METRICS
-    self.metrics_service_->post_time_metric(
-        { .category = 1,
-          .id = ++frame_num,
-          .timestamp_ns = frame_timestamp,
-          .nanoseconds = self.frame_timer_.nanosecond_value(),
-          .frame_size = 1,
-          .frame_count = 1 });
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+    metrics::add_frame_time(metrics::video_metrics,
+                            global_elapsed.nanosecond_value() - frame_start);
 #endif
 }
 
