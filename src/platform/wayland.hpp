@@ -58,8 +58,6 @@ using OutputPtr = std::unique_ptr<wl_output, OutputDeleter>;
 
 } // namespace wayland
 
-namespace egl
-{
 struct EGLDeleter
 {
     EGLDeleter(EGL e, EGLDisplay d) noexcept;
@@ -96,8 +94,6 @@ struct EGLSurfaceDeleter : EGLDeleter
 using EGLSurfacePtr =
     std::unique_ptr<std::remove_pointer_t<EGLSurface>, EGLSurfaceDeleter>;
 
-} // namespace egl
-
 struct Wayland
 {
     wayland::DisplayPtr display;
@@ -113,9 +109,9 @@ struct Wayland
 
 struct WaylandEGL
 {
-    egl::EGLDisplayPtr egl_display;
-    egl::EGLSurfacePtr egl_surface;
-    egl::EGLContextPtr egl_context;
+    EGLDisplayPtr egl_display;
+    EGLSurfacePtr egl_surface;
+    EGLContextPtr egl_context;
 };
 
 auto initialize_wayland(wayland::DisplayPtr) -> std::unique_ptr<Wayland>;

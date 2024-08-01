@@ -17,6 +17,7 @@ auto attach_symbol(F** fn, char const* name, void* lib) -> void
         throw sc::ModuleError { std::string { "Couldn't load symbol: " } +
                                 name };
 }
+
 } // namespace sc
 
 #endif // SHADOW_CAST_UTILS_SYMBOL_HPP_INCLUDED

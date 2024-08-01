@@ -19,6 +19,15 @@ add_library(shadow-cast-obj
     drm/messaging.cpp
     drm/planes.cpp
 
+    gl/buffer.cpp
+    gl/core.cpp
+    gl/error.cpp
+    gl/framebuffer.cpp
+    gl/program.cpp
+    gl/shader.cpp
+    gl/texture.cpp
+    gl/vertex_array_object.cpp
+
     handlers/audio_chunk_writer.cpp
     handlers/drm_video_frame_writer.cpp
 	handlers/stream_finalizer.cpp
@@ -30,9 +39,11 @@ add_library(shadow-cast-obj
     io/unix_socket.cpp
 
     platform/egl.cpp
+    platform/opengl.cpp
     platform/wayland.cpp
 
     services/audio_service.cpp
+    services/color_converter.cpp
     services/context.cpp
     services/drm_video_service.cpp
     services/encoder.cpp
@@ -78,12 +89,15 @@ target_link_libraries(shadow-cast-obj
     wayland-egl
 )
 
+add_subdirectory(glsl)
+
 add_executable(shadow-cast
    main.cpp
 ) 
 
 target_link_libraries(shadow-cast
     PRIVATE
+    embedded_glsl
     shadow-cast-obj
 )
 
@@ -105,6 +119,7 @@ set_target_properties(
 
 target_link_libraries(shadow-cast-kms
     PRIVATE
+    embedded_glsl
     shadow-cast-obj
     DRM::drm
 )

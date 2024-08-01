@@ -121,6 +121,10 @@ struct NvCuda
     CUresult (*cuGraphicsEGLRegisterImage)(CUgraphicsResource* pCudaResource,
                                            void* image,
                                            unsigned int flags);
+    CUresult (*cuGraphicsGLRegisterImage)(CUgraphicsResource* pCudaResource,
+                                          unsigned int texture_name,
+                                          unsigned int texture_target,
+                                          unsigned int flags);
     CUresult (*cuGraphicsResourceSetMapFlags)(CUgraphicsResource resource,
                                               unsigned int flags);
     CUresult (*cuGraphicsMapResources)(unsigned int count,

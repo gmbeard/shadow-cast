@@ -74,6 +74,8 @@ auto load_cuda() -> NvCuda
     TRY_ATTACH_SYMBOL(&cuda.cuMemcpy2D_v2, "cuMemcpy2D_v2", lib);
     TRY_ATTACH_SYMBOL(
         &cuda.cuGraphicsEGLRegisterImage, "cuGraphicsEGLRegisterImage", lib);
+    TRY_ATTACH_SYMBOL(
+        &cuda.cuGraphicsGLRegisterImage, "cuGraphicsGLRegisterImage", lib);
     TRY_ATTACH_SYMBOL(&cuda.cuGraphicsResourceSetMapFlags,
                       "cuGraphicsResourceSetMapFlags",
                       lib);

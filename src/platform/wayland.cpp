@@ -119,9 +119,6 @@ auto OutputDeleter::operator()(wl_output* ptr) const noexcept -> void
 
 } // namespace wayland
 
-namespace egl
-{
-
 EGLDeleter::EGLDeleter(EGL e, EGLDisplay d) noexcept
     : egl { e }
     , display { d }
@@ -142,8 +139,6 @@ auto EGLSurfaceDeleter::operator()(EGLSurface ptr) const noexcept -> void
 {
     egl.eglDestroySurface(display, ptr);
 }
-
-} // namespace egl
 
 auto initialize_wayland(wayland::DisplayPtr display) -> std::unique_ptr<Wayland>
 {
@@ -207,8 +202,8 @@ auto initialize_wayland_egl(EGL egl, Wayland const& platform) -> WaylandEGL
     if (!egl.eglBindAPI(EGL_OPENGL_API))
         throw std::runtime_error { "Failed to bind EGL API" };
 
-    egl::EGLDisplayPtr egl_display { egl.eglGetDisplay(platform.display.get()),
-                                     { egl } };
+    EGLDisplayPtr egl_display { egl.eglGetDisplay(platform.display.get()),
+                                { egl } };
 
     if (!egl_display)
         throw std::runtime_error { "Failed to get EGL display" };
@@ -225,18 +220,18 @@ auto initialize_wayland_egl(EGL egl, Wayland const& platform) -> WaylandEGL
         throw std::runtime_error { "Failed to select EGL config" };
     }
 
-    egl::EGLSurfacePtr egl_surface { egl.eglCreateWindowSurface(
-                                         egl_display.get(),
-                                         egl_config,
-                                         reinterpret_cast<EGLNativeWindowType>(
-                                             platform.window.get()),
-                                         nullptr),
-                                     { egl, egl_display.get() } };
+    EGLSurfacePtr egl_surface { egl.eglCreateWindowSurface(
+                                    egl_display.get(),
+                                    egl_config,
+                                    reinterpret_cast<EGLNativeWindowType>(
+                                        platform.window.get()),
+                                    nullptr),
+                                { egl, egl_display.get() } };
 
     if (!egl_surface)
         throw std::runtime_error { "Failed to create EGL surface" };
 
-    egl::EGLContextPtr egl_context {
+    EGLContextPtr egl_context {
         egl.eglCreateContext(egl_display.get(), egl_config, nullptr, ctxattr),
         { egl, egl_display.get() }
     };

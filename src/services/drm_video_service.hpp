@@ -2,6 +2,7 @@
 #define SHADOW_CAST_SERVICES_DRM_VIDEO_SERVICE_HPP_INCLUDED
 
 #include "config.hpp"
+#include "services/color_converter.hpp"
 
 #ifdef SHADOW_CAST_ENABLE_METRICS
 #include "services/metrics_service.hpp"
@@ -51,6 +52,7 @@ private:
     static auto dispatch_frame(Service&) -> void;
 
 private:
+    ColorConverter color_converter_;
     NvCuda nvcuda_;
     CUcontext cuda_ctx_;
     BorrowedPtr<EGL> egl_;

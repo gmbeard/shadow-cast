@@ -4,8 +4,11 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
+using eglImageOES = void*;
+
 namespace sc
 {
+struct OpenGL;
 
 struct EGL
 {
@@ -63,7 +66,9 @@ struct EGL
                                    EGLContext ctx);
 };
 
-auto load_egl() -> EGL;
+auto egl() -> EGL const&;
+
+auto load_gl_extensions() -> void;
 
 } // namespace sc
 
