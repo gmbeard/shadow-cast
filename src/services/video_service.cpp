@@ -2,10 +2,9 @@
 #include "nvidia/NvFBC.h"
 #include "utils/contracts.hpp"
 
-namespace
-{
-constexpr std::size_t kNsPerMs = 1'000'000;
-}
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+#include "metrics/metrics.hpp"
+#endif
 
 namespace sc
 {
@@ -30,16 +29,19 @@ auto dispatch_frame(Service& svc) -> void
 {
     auto& self = static_cast<VideoService&>(svc);
 
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+    auto const frame_start = global_elapsed.nanosecond_value();
+#endif
+
     CUdeviceptr cu_device_ptr {};
 
     NVFBC_FRAME_GRAB_INFO frame_info {};
 
     NVFBC_TOCUDA_GRAB_FRAME_PARAMS grab_params {};
     grab_params.dwVersion = NVFBC_TOCUDA_GRAB_FRAME_PARAMS_VER;
-    grab_params.dwFlags = NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT_IF_NEW_FRAME_READY;
+    grab_params.dwFlags = NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT;
     grab_params.pFrameGrabInfo = &frame_info;
     grab_params.pCUDADeviceBuffer = &cu_device_ptr;
-    grab_params.dwTimeoutMs = self.frame_time_ / kNsPerMs;
 
     if (auto const status =
             self.nvfbc_.nvFBCToCudaGrabFrame(self.nvfbc_session_, &grab_params);
@@ -48,6 +50,11 @@ auto dispatch_frame(Service& svc) -> void
 
     if (self.receiver_)
         (*self.receiver_)(cu_device_ptr, frame_info, self.frame_time_);
+
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+    metrics::add_frame_time(metrics::video_metrics,
+                            global_elapsed.nanosecond_value() - frame_start);
+#endif
 }
 
 } // namespace sc
