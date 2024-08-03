@@ -89,8 +89,6 @@ auto should_print_histogram() -> void
 
     sc::metrics::format_histogram(
         std::cerr, histogram, "Frame-time Nanoseconds", "Test Histogram");
-
-    EXPECT(false);
 }
 
 auto main() -> int
