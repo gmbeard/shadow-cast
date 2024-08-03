@@ -182,6 +182,8 @@ auto constexpr convert_to_pipewire_format(SampleFormat fmt) -> spa_audio_format
     throw std::runtime_error { "No viable Pipewire sample format conversion " };
 }
 
+auto sample_format_name(SampleFormat fmt) noexcept -> char const*;
+
 auto find_supported_formats(sc::BorrowedPtr<AVCodec const> codec)
     -> std::vector<SampleFormat>;
 

@@ -14,10 +14,12 @@ namespace sc
 
 ChunkWriter::ChunkWriter(AVCodecContext* codec_context,
                          AVStream* stream,
-                         Encoder encoder) noexcept
+                         Encoder encoder,
+                         std::size_t frame_size) noexcept
     : codec_context_ { codec_context }
     , stream_ { stream }
     , encoder_ { encoder }
+    , frame_size_ { frame_size }
     , frame_ { av_frame_alloc() }
     , total_samples_written_ { 0 }
 {
@@ -25,9 +27,7 @@ ChunkWriter::ChunkWriter(AVCodecContext* codec_context,
 
 auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
 {
-    SC_EXPECT(!codec_context_->frame_size ||
-              static_cast<int>(chunk.sample_count) ==
-                  codec_context_->frame_size);
+    SC_EXPECT(chunk.sample_count >= frame_size_);
     sc::SampleFormat const sample_format =
         sc::convert_from_libav_format(codec_context_->sample_fmt);
 
@@ -38,7 +38,7 @@ auto ChunkWriter::operator()(MediaChunk const& chunk) -> void
         encoder_.prepare_frame(codec_context_.get(), stream_.get());
     auto* frame = encoder_frame->frame.get();
 
-    frame->nb_samples = chunk.sample_count;
+    frame->nb_samples = frame_size_;
     frame->format = codec_context_->sample_fmt;
     frame->sample_rate = codec_context_->sample_rate;
 #if LIBAVCODEC_VERSION_MAJOR < 60

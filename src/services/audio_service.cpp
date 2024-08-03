@@ -1,13 +1,19 @@
 #include "services/audio_service.hpp"
+#include "av/media_chunk.hpp"
+#include "av/sample_format.hpp"
 #include "utils/contracts.hpp"
 #include "utils/elapsed.hpp"
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cinttypes>
+#include <cstdint>
+#include <cstdio>
 #include <errno.h>
 #include <fcntl.h>
+#include <mutex>
 #include <span>
+#include <sys/eventfd.h>
 #include <system_error>
 #include <unistd.h>
 
@@ -20,32 +26,23 @@ using namespace std::literals::string_literals;
 namespace
 {
 
-auto transfer_chunk_n(sc::MediaChunk& source,
-                      std::size_t num_bytes,
-                      sc::MediaChunk& dest) -> void
+auto prepare_buffer_channels(sc::MediaChunk& buffer,
+                             sc::SampleFormat sample_format,
+                             std::size_t num_channels = 2) -> void
 {
-    auto channels_required =
-        std::max(0,
-                 static_cast<int>(source.channel_buffers().size() -
-                                  dest.channel_buffers().size()));
+    buffer.channel_buffers().clear();
+    buffer.channel_buffers().push_back(sc::DynamicBuffer {});
 
-    while (channels_required--)
-        dest.channel_buffers().push_back(sc::DynamicBuffer {});
-
-    auto it = source.channel_buffers().begin();
-    auto out_it = dest.channel_buffers().begin();
-
-    for (; it != source.channel_buffers().end(); ++it) {
-        auto& src_buf = *it;
-        auto& dst_buf = *out_it++;
-
-        assert(src_buf.size() >= num_bytes);
-
-        auto dst_data = dst_buf.prepare(num_bytes);
-        std::copy_n(src_buf.data().begin(), num_bytes, dst_data.begin());
-        dst_buf.commit(num_bytes);
-        src_buf.consume(num_bytes);
+    if (!sc::is_interleaved_format(sample_format)) {
+        while (num_channels != buffer.channel_buffers().size()) {
+            buffer.channel_buffers().push_back(sc::DynamicBuffer {});
+        }
     }
+
+    SC_EXPECT(buffer.channel_buffers().size() ==
+                      sc::is_interleaved_format(sample_format)
+                  ? 1
+                  : num_channels);
 }
 
 } // namespace
@@ -70,56 +67,6 @@ struct RequeueBufferGuard
  *
  *  pw_stream_queue_buffer(stream, b);
  */
-static void on_process(void* userdata)
-{
-    sc::AudioLoopData* data = reinterpret_cast<sc::AudioLoopData*>(userdata);
-    struct pw_buffer* b;
-
-    if ((b = pw_stream_dequeue_buffer(data->stream)) == NULL) {
-        pw_log_warn("out of buffers: %m");
-        return;
-    }
-
-    RequeueBufferGuard scope_guard { b, data->stream };
-
-    spa_buffer* buf = b->buffer;
-
-    if (!buf || !buf->datas[0].data) {
-        pw_log_warn("No data in buffer\n");
-        return;
-    }
-
-    auto const sample_size = sample_format_size(data->required_sample_format);
-    auto const num_bytes = buf->datas[0].chunk->size;
-    auto const num_samples = is_interleaved_format(data->required_sample_format)
-                                 ? (num_bytes / 2) / sample_size
-                                 : num_bytes / sample_size;
-
-    auto pool_chunk = data->service->chunk_pool().get();
-
-    sc::MediaChunk& chunk = *pool_chunk;
-    chunk.timestamp_ms = sc::global_elapsed.value();
-    chunk.sample_count = num_samples;
-    std::span channel_data { buf->datas, buf->n_datas };
-    while (chunk.channel_buffers().size() < channel_data.size())
-        chunk.channel_buffers().push_back(sc::DynamicBuffer {});
-
-    auto out_buffer_it = chunk.channel_buffers().begin();
-
-    for (auto const& d : channel_data) {
-        sc::DynamicBuffer& chunk_buffer = *out_buffer_it++;
-        auto target_bytes = chunk_buffer.prepare(num_bytes);
-
-        std::span source_bytes { reinterpret_cast<std::uint8_t const*>(d.data),
-                                 num_bytes };
-
-        std::copy(begin(source_bytes), end(source_bytes), begin(target_bytes));
-        chunk_buffer.commit(num_bytes);
-    }
-
-    add_chunk(*data->service, std::move(pool_chunk));
-}
-
 /* Be notified when the stream param changes. We're only looking at the
  * format changes.
  */
@@ -145,7 +92,7 @@ on_stream_param_changed(void* _data, uint32_t id, const struct spa_pod* param)
     spa_format_audio_raw_parse(param, &data->format.info.raw);
 
     fprintf(stdout,
-            "capturing rate: %d, channels: %d\n",
+            "Audio capturing rate: %d, channels: %d\n",
             data->format.info.raw.rate,
             data->format.info.raw.channels);
 }
@@ -159,7 +106,7 @@ constexpr pw_stream_events stream_events = { .version =
                                                  on_stream_param_changed,
                                              .add_buffer = nullptr,
                                              .remove_buffer = nullptr,
-                                             .process = on_process,
+                                             .process = sc::on_process,
                                              .drained = nullptr,
                                              .command = nullptr,
                                              .trigger_done = nullptr };
@@ -208,6 +155,9 @@ auto start_pipewire(sc::AudioLoopData& data)
      * value). We leave the channels and rate empty to accept the native
      * graph rate and channels. */
     spa_audio_info_raw raw_init = {};
+    fprintf(stderr,
+            "Audio sample format: %s\n",
+            sample_format_name(data.required_sample_format));
     raw_init.format = convert_to_pipewire_format(data.required_sample_format);
     raw_init.rate = data.required_sample_rate;
     params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &raw_init);
@@ -242,6 +192,59 @@ auto stop_pipewire(sc::AudioLoopData& data) noexcept -> void
 namespace sc
 {
 
+auto on_process(void* userdata) -> void
+{
+    sc::AudioLoopData* data = reinterpret_cast<sc::AudioLoopData*>(userdata);
+    struct pw_buffer* b;
+
+    if ((b = pw_stream_dequeue_buffer(data->stream)) == NULL) {
+        pw_log_warn("out of buffers: %m");
+        return;
+    }
+
+    RequeueBufferGuard scope_guard { b, data->stream };
+
+    spa_buffer* buf = b->buffer;
+
+    if (!buf || !buf->datas[0].data) {
+        pw_log_warn("No data in buffer\n");
+        return;
+    }
+
+    auto const sample_size = sample_format_size(data->required_sample_format);
+    auto const num_bytes = buf->datas[0].chunk->size;
+    auto const num_samples = is_interleaved_format(data->required_sample_format)
+                                 ? (num_bytes / 2) / sample_size
+                                 : num_bytes / sample_size;
+
+    std::span channel_data { buf->datas, buf->n_datas };
+
+    auto lock = std::lock_guard { data->service->data_mutex_ };
+
+    auto& input_buffer = data->service->input_buffer_;
+    SC_EXPECT(channel_data.size() == input_buffer.channel_buffers().size());
+
+    auto out_buffer_it = input_buffer.channel_buffers().begin();
+
+    for (auto const& d : channel_data) {
+        sc::DynamicBuffer& chunk_buffer = *out_buffer_it++;
+        auto target_bytes = chunk_buffer.prepare(num_bytes);
+
+        std::span source_bytes { reinterpret_cast<std::uint8_t const*>(d.data),
+                                 num_bytes };
+
+        std::copy(begin(source_bytes), end(source_bytes), begin(target_bytes));
+        chunk_buffer.commit(num_bytes);
+    }
+
+    input_buffer.sample_count += num_samples;
+
+    if (input_buffer.sample_count >= data->service->frame_size_) {
+        data->service->notify(input_buffer.sample_count /
+                              data->service->frame_size_);
+    }
+}
+
 AudioService::AudioService(SampleFormat sample_format,
                            std::size_t sample_rate,
                            std::size_t frame_size)
@@ -251,19 +254,21 @@ AudioService::AudioService(SampleFormat sample_format,
 {
 }
 
-AudioService::~AudioService()
-{
-    ReturnToPoolGuard return_to_pool_guard { available_chunks_, chunk_pool_ };
-}
+AudioService::~AudioService() {}
 
-auto AudioService::chunk_pool() noexcept -> SynchronizedPool<MediaChunk>&
+auto AudioService::notify(std::size_t frames) noexcept -> void
 {
-    return chunk_pool_;
+    std::uint64_t const val = frames;
+    ::write(event_fd_, &val, sizeof(val));
 }
 
 auto AudioService::on_init(ReadinessRegister reg) -> void
 {
-    reg(FrameTimeRatio(1), &dispatch_chunks);
+    event_fd_ = eventfd(0, EFD_NONBLOCK);
+    SC_EXPECT(event_fd_ >= 0);
+    reg(event_fd_, &dispatch_chunks);
+
+    prepare_buffer_channels(input_buffer_, sample_format_);
 
     loop_data_ = {};
     loop_data_.service = this;
@@ -274,6 +279,8 @@ auto AudioService::on_init(ReadinessRegister reg) -> void
 
 auto AudioService::on_uninit() noexcept -> void
 {
+    ::close(event_fd_);
+    event_fd_ = -1;
     stop_pipewire(loop_data_);
 
     if (stream_end_listener_)
@@ -283,34 +290,40 @@ auto AudioService::on_uninit() noexcept -> void
 auto dispatch_chunks(sc::Service& svc) -> void
 {
     auto& self = static_cast<AudioService&>(svc);
+    std::uint64_t val;
+    ::read(self.event_fd_, &val, sizeof(val));
+
+    std::size_t num_frames = val;
+    SC_EXPECT(num_frames);
 
 #ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
     auto const frame_start = global_elapsed.nanosecond_value();
 #endif
 
-    decltype(self.available_chunks_) tmp_chunks;
-    ReturnToPoolGuard return_to_pool_guard { tmp_chunks, self.chunk_pool() };
-
-    {
-        std::lock_guard data_lock { self.data_mutex_ };
-        auto it = std::find_if(self.available_chunks_.begin(),
-                               self.available_chunks_.end(),
-                               [&](auto const& chunk) {
-                                   return self.frame_size_ &&
-                                          chunk.sample_count < self.frame_size_;
-                               });
-
-        tmp_chunks.splice(tmp_chunks.begin(),
-                          self.available_chunks_,
-                          self.available_chunks_.begin(),
-                          it);
-    }
-
     if (auto& listener = self.chunk_listener_; listener) {
-        for (auto const& chunk : tmp_chunks) {
-            SC_EXPECT(!self.frame_size_ ||
-                      chunk.sample_count == self.frame_size_);
-            (*listener)(chunk);
+        while (num_frames--) {
+            auto lock = std::lock_guard { self.data_mutex_ };
+            SC_EXPECT(self.input_buffer_.sample_count >= self.frame_size_);
+
+            (*listener)(self.input_buffer_);
+            auto const sample_size =
+                sc::sample_format_size(self.sample_format_);
+            auto const interleaved =
+                sc::is_interleaved_format(self.sample_format_);
+
+            for (auto it = self.input_buffer_.channel_buffers().begin();
+                 it != self.input_buffer_.channel_buffers().end();
+                 ++it) {
+
+                if (interleaved) {
+                    it->consume(sample_size * self.frame_size_ * 2);
+                    break;
+                }
+
+                it->consume(sample_size * self.frame_size_);
+            }
+
+            self.input_buffer_.sample_count -= self.frame_size_;
         }
     }
 
@@ -318,60 +331,6 @@ auto dispatch_chunks(sc::Service& svc) -> void
     metrics::add_frame_time(metrics::audio_metrics,
                             global_elapsed.nanosecond_value() - frame_start);
 #endif
-}
-
-auto add_chunk(AudioService& svc,
-               sc::SynchronizedPool<MediaChunk>::ItemPtr chunk) -> void
-{
-    auto const sample_size = sc::sample_format_size(svc.sample_format_);
-    auto const interleaved = sc::is_interleaved_format(svc.sample_format_);
-
-    using namespace std::literals::string_literals;
-
-    {
-        std::lock_guard data_lock { svc.data_mutex_ };
-
-        if (!svc.frame_size_) {
-            svc.available_chunks_.push_back(chunk.release());
-            return;
-        }
-
-        if (!svc.available_chunks_.empty()) {
-            auto it = std::next(svc.available_chunks_.end(), -1);
-
-            if (svc.frame_size_ > it->sample_count) {
-                auto const samples_to_copy = std::min(
-                    chunk->sample_count, svc.frame_size_ - it->sample_count);
-
-                if (samples_to_copy) {
-                    transfer_chunk_n(*chunk,
-                                     sample_size * samples_to_copy *
-                                         (interleaved ? 2 : 1),
-                                     *it);
-                    it->sample_count += samples_to_copy;
-                    chunk->sample_count -= samples_to_copy;
-                }
-            }
-        }
-
-        while (chunk->sample_count > svc.frame_size_) {
-            auto new_chunk = svc.chunk_pool().get();
-
-            transfer_chunk_n(*chunk,
-                             sample_size * svc.frame_size_ *
-                                 (interleaved ? 2 : 1),
-                             *new_chunk);
-
-            chunk->sample_count -= svc.frame_size_;
-            new_chunk->sample_count += svc.frame_size_;
-
-            svc.available_chunks_.push_back(new_chunk.release());
-        }
-
-        if (chunk->sample_count) {
-            svc.available_chunks_.push_back(chunk.release());
-        }
-    }
 }
 
 } // namespace sc
