@@ -32,6 +32,8 @@ struct AudioLoopData
     std::size_t required_sample_rate;
 };
 
+auto on_process(void* userdata) -> void;
+
 struct AudioService final : Service
 {
     friend auto dispatch_chunks(Service&) -> void;
@@ -52,7 +54,7 @@ struct AudioService final : Service
     AudioService(AudioService const&) = delete;
     auto operator=(AudioService const&) -> AudioService& = delete;
 
-    auto chunk_pool() noexcept -> SynchronizedPool<MediaChunk>&;
+    friend auto on_process(void* userdata) -> void;
 
 protected:
     auto on_init(ReadinessRegister) -> void override;
@@ -73,19 +75,20 @@ public:
     }
 
 private:
+    auto notify(std::size_t frames) noexcept -> void;
+
     std::optional<ChunkReceiverType> chunk_listener_;
     std::optional<StreamEndReceiverType> stream_end_listener_;
-    IntrusiveList<MediaChunk> available_chunks_;
     std::mutex data_mutex_;
     AudioLoopData loop_data_ {};
     SampleFormat sample_format_;
     std::size_t sample_rate_;
     std::size_t frame_size_;
-    SynchronizedPool<MediaChunk> chunk_pool_;
+    MediaChunk input_buffer_;
+    int event_fd_ { -1 };
 };
 
 auto dispatch_chunks(sc::Service&) -> void;
-auto add_chunk(AudioService&, SynchronizedPool<MediaChunk>::ItemPtr) -> void;
 
 } // namespace sc
 

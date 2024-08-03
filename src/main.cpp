@@ -1,4 +1,5 @@
 #include "./shadow_cast.hpp"
+#include "utils/contracts.hpp"
 #include "utils/frame_time.hpp"
 
 #include <X11/Xlib.h>
@@ -9,9 +10,11 @@
 #include <cstdio>
 #include <initializer_list>
 #include <iostream>
+#include <libavutil/dict.h>
 #include <libavutil/pixfmt.h>
 #include <memory>
 #include <signal.h>
+#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -78,6 +81,15 @@ struct DestroyCaptureSessionGuard
     NVFBC_SESSION_HANDLE nvfbc_handle;
     sc::NvFBC nvfbc;
 };
+
+auto apply_audio_codec_modifiers(AVCodec const& codec, AVDictionary*& output)
+    -> void
+{
+    if (std::string_view { codec.name } == "libopus") {
+        av_dict_set_int(&output, "frame_duration", 40, 0);
+        av_dict_set_int(&output, "vbr", 0, 0);
+    }
+}
 
 auto run_loop(sc::Context& main,
               sc::Context& media,
@@ -213,8 +225,11 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     audio_encoder_context->time_base = AVRational { 1, params.sample_rate };
     audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
+    AVDictionary* options = nullptr;
+    apply_audio_codec_modifiers(*encoder, options);
+
     if (auto const ret =
-            avcodec_open2(audio_encoder_context.get(), encoder.get(), nullptr);
+            avcodec_open2(audio_encoder_context.get(), encoder.get(), &options);
         ret < 0) {
         throw sc::CodecError { "Failed to open audio codec: " +
                                sc::av_error_to_string(ret) };
@@ -292,6 +307,10 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     sc::Context audio_ctx { params.frame_time };
     sc::Context media_ctx { params.frame_time };
 
+    std::size_t const frame_size = audio_encoder_context->frame_size
+                                       ? audio_encoder_context->frame_size
+                                       : 2048;
+
     ctx.services().add<sc::SignalService>(sc::SignalService {});
     add_signal_handler(ctx, SIGINT, [&](std::uint32_t) {
         ctx.request_stop();
@@ -300,11 +319,7 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
 
     audio_ctx.services().add_from_factory<sc::AudioService>([&] {
         return std::make_unique<sc::AudioService>(
-            supported_formats.front(),
-            params.sample_rate,
-            audio_encoder_context->frame_size
-                ? audio_encoder_context->frame_size
-                : 2048);
+            supported_formats.front(), params.sample_rate, frame_size);
     });
 
     ctx.services().add_from_factory<sc::DRMVideoService>([&] {
@@ -321,7 +336,8 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
     set_audio_chunk_handler(audio_ctx,
                             sc::ChunkWriter { audio_encoder_context.get(),
                                               stream.get(),
-                                              media_writer });
+                                              media_writer,
+                                              frame_size });
     set_drm_video_frame_handler(
         ctx,
         sc::DRMVideoFrameWriter {
@@ -407,8 +423,11 @@ auto run(sc::Parameters const& params) -> void
     audio_encoder_context->time_base = AVRational { 1, params.sample_rate };
     audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
+    AVDictionary* options = nullptr;
+    apply_audio_codec_modifiers(*encoder, options);
+
     if (auto const ret =
-            avcodec_open2(audio_encoder_context.get(), encoder.get(), nullptr);
+            avcodec_open2(audio_encoder_context.get(), encoder.get(), &options);
         ret < 0) {
         throw sc::CodecError { "Failed to open audio codec: " +
                                sc::av_error_to_string(ret) };
@@ -496,6 +515,10 @@ auto run(sc::Parameters const& params) -> void
     sc::Context audio_ctx { params.frame_time };
     sc::Context media_ctx { params.frame_time };
 
+    std::size_t const frame_size = audio_encoder_context->frame_size
+                                       ? audio_encoder_context->frame_size
+                                       : 2048;
+
     ctx.services().add<sc::SignalService>(sc::SignalService {});
     add_signal_handler(ctx, SIGINT, [&](std::uint32_t) {
         ctx.request_stop();
@@ -504,11 +527,7 @@ auto run(sc::Parameters const& params) -> void
 
     audio_ctx.services().add_from_factory<sc::AudioService>([&] {
         return std::make_unique<sc::AudioService>(
-            supported_formats.front(),
-            params.sample_rate,
-            audio_encoder_context->frame_size
-                ? audio_encoder_context->frame_size
-                : 2048);
+            supported_formats.front(), params.sample_rate, frame_size);
     });
 
     ctx.services().add_from_factory<sc::VideoService>([&] {
@@ -525,7 +544,8 @@ auto run(sc::Parameters const& params) -> void
     set_audio_chunk_handler(audio_ctx,
                             sc::ChunkWriter { audio_encoder_context.get(),
                                               stream.get(),
-                                              media_writer });
+                                              media_writer,
+                                              frame_size });
     set_video_frame_handler(ctx,
                             sc::VideoFrameWriter { video_encoder_context.get(),
                                                    video_stream.get(),
