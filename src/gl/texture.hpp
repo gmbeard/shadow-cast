@@ -30,7 +30,7 @@ struct TextureTraits
 {
     using category = TextureCategory;
 
-    auto bind(GLenum target, GLuint name) const -> void;
+    auto bind(GLenum target, GLuint name) const noexcept -> void;
     auto create() const -> GLuint;
     auto destroy(GLuint name) const noexcept -> void;
 };

@@ -5,4 +5,6 @@ add_embedded_glsl_target(
     SOURCES
         default_vertex.glsl
         default_fragment.glsl
+        mouse_vertex.glsl
+        mouse_fragment.glsl
 )

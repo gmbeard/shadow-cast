@@ -80,6 +80,8 @@ auto load_opengl() -> OpenGL
     TRY_ATTACH_SYMBOL(&opengl.glUniform2fv, "glUniform2fv", lib);
     TRY_ATTACH_SYMBOL(&opengl.glUniform3fv, "glUniform3fv", lib);
     TRY_ATTACH_SYMBOL(&opengl.glUniform4fv, "glUniform4fv", lib);
+    TRY_ATTACH_SYMBOL(&opengl.glEnable, "glEnable", lib);
+    TRY_ATTACH_SYMBOL(&opengl.glBlendFunc, "glBlendFunc", lib);
 
     return opengl;
 }

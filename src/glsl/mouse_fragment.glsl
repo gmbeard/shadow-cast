@@ -7,7 +7,7 @@ uniform samplerExternalOES texture_sampler;
 
 void main()
 {
-    FragColor = vec4(texture2D(texture_sampler, tex_coord).rgb, 1.0);
+    FragColor = texture2D(texture_sampler, tex_coord);
 }
 
 // vim: ft=glsl

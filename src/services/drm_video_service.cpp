@@ -12,6 +12,7 @@
 #include "utils/contracts.hpp"
 #include "utils/result.hpp"
 #include "utils/scope_guard.hpp"
+#include <EGL/egl.h>
 #include <algorithm>
 #include <filesystem>
 #include <libdrm/drm_fourcc.h>
@@ -233,12 +234,21 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
             ::close(drm_data.descriptors[i].fd);
     });
 
+    auto begin_descriptors = std::begin(drm_data.descriptors);
+    auto end_descriptors =
+        std::next(std::begin(drm_data.descriptors), drm_data.num_fds);
+
     auto const& descriptor = std::max_element(
-        std::begin(drm_data.descriptors),
-        std::next(std::begin(drm_data.descriptors), drm_data.num_fds),
-        [](auto const& a, auto const& b) {
+        begin_descriptors, end_descriptors, [](auto const& a, auto const& b) {
             return (a.width * a.height) < (b.width * b.height);
         });
+
+    auto const mouse_plane_position =
+        std::find_if(begin_descriptors, end_descriptors, [](auto const& plane) {
+            return plane.is_flag_set(sc::plane_flags::IS_CURSOR);
+        });
+
+    auto const has_mouse_plane = mouse_plane_position != end_descriptors;
 
     // clang-format off
     std::intptr_t const img_attr[] = {
@@ -273,11 +283,61 @@ auto DRMVideoService::dispatch_frame(Service& svc) -> void
                                                        input_image);
                  });
 
-    self.color_converter_.convert();
+    EGLImage mouse_image = EGL_NO_IMAGE;
+
+    std::optional<MouseParameters> mouse_params {};
+
+    if (has_mouse_plane) {
+        auto const& mouse_descriptor = *mouse_plane_position;
+        // clang-format off
+        std::intptr_t const mouse_img_attr[] = {
+            EGL_LINUX_DRM_FOURCC_EXT, mouse_descriptor.pixel_format,
+            EGL_WIDTH, mouse_descriptor.width,
+            EGL_HEIGHT, mouse_descriptor.height,
+            EGL_DMA_BUF_PLANE0_FD_EXT, mouse_descriptor.fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, mouse_descriptor.offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, mouse_descriptor.pitch,
+            //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, static_cast<std::uint32_t>(mouse_descriptor.modifier & 0xffffffffull),
+            //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, static_cast<std::uint32_t>(mouse_descriptor.modifier >> 32ull),
+            EGL_NONE
+        };
+        // clang-format on
+
+        mouse_image =
+            self.egl_->eglCreateImage(self.platform_egl_->egl_display.get(),
+                                      EGL_NO_CONTEXT,
+                                      EGL_LINUX_DMA_BUF_EXT,
+                                      static_cast<EGLClientBuffer>(nullptr),
+                                      mouse_img_attr);
+
+        if (mouse_image == EGL_NO_IMAGE) {
+            throw std::runtime_error { "eglCreateImage input failed: " +
+                                       std::to_string(
+                                           self.egl_->eglGetError()) };
+        }
+
+        opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                     self.color_converter_.mouse_texture(),
+                     [&](auto) {
+                         gl().glEGLImageTargetTexture2DOES(
+                             GL_TEXTURE_EXTERNAL_OES, mouse_image);
+                     });
+
+        mouse_params = MouseParameters { .width = mouse_descriptor.width,
+                                         .height = mouse_descriptor.height,
+                                         .x = mouse_descriptor.x,
+                                         .y = mouse_descriptor.y };
+    }
+
+    self.color_converter_.convert(mouse_params);
 
     SC_SCOPE_GUARD([&] {
         self.egl_->eglDestroyImage(self.platform_egl_->egl_display.get(),
                                    input_image);
+        if (has_mouse_plane) {
+            self.egl_->eglDestroyImage(self.platform_egl_->egl_display.get(),
+                                       mouse_image);
+        }
     });
 
     register_gl_texture_in_cuda(

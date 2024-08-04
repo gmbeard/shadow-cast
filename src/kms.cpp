@@ -1,4 +1,5 @@
 #include "drm.hpp"
+#include "drm/planes.hpp"
 #include "io.hpp"
 #include "utils.hpp"
 
@@ -182,9 +183,6 @@ auto get_plane_properties(int drm_fd,
         SC_SCOPE_GUARD([&] { drmModeFreeProperty(prop); });
 
         std::string_view prop_name { prop->name };
-        log() << "[DRM] Property: " << prop_name
-              << ", Values: " << prop->count_values << '\n';
-
         const uint32_t type = prop->flags & (DRM_MODE_PROP_LEGACY_TYPE |
                                              DRM_MODE_PROP_EXTENDED_TYPE);
 
@@ -246,7 +244,7 @@ auto get_fb(int drm_fd) -> OutgoingMessage
         if (!plane || !plane->fb_id)
             continue;
 
-        log() << "[DRM] Got Plane\n";
+        log() << "[DRM] Got Plane " << plane->plane_id << '\n';
 
         /* Requires SYS_CAP_ADMIN from here, E.g...
          *
@@ -285,10 +283,24 @@ auto get_fb(int drm_fd) -> OutgoingMessage
         msg.descriptors[descriptor_index].offset = fb->offsets[0];
         msg.descriptors[descriptor_index].pixel_format = fb->pixel_format;
         msg.descriptors[descriptor_index].modifier = fb->modifier;
+        get_plane_properties(
+            drm_fd, plane->plane_id, msg.descriptors[descriptor_index]);
 
         log() << "[DRM] Got FB FD: " << fb_fd << '\n';
         log() << "[DRM] FB: " << fb->handles[0] << ' ' << fb->handles[1] << ' '
               << fb->handles[2] << ' ' << fb->handles[3] << '\n';
+
+        if (msg.descriptors[descriptor_index].is_flag_set(
+                sc::plane_flags::IS_CURSOR)) {
+            log() << "[DRM] width: " << msg.descriptors[descriptor_index].width
+                  << ", height: " << msg.descriptors[descriptor_index].height
+                  << ", x: " << msg.descriptors[descriptor_index].x
+                  << ", y: " << msg.descriptors[descriptor_index].y
+                  << ", src_w: " << msg.descriptors[descriptor_index].src_w
+                  << ", src_h: " << msg.descriptors[descriptor_index].src_h
+                  << ", offset: " << msg.descriptors[descriptor_index].offset
+                  << '\n';
+        }
 
         msg.num_fds += 1;
     }

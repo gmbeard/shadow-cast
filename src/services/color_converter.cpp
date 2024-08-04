@@ -1,9 +1,13 @@
 #include "services/color_converter.hpp"
 #include "gl/core.hpp"
 #include "gl/program.hpp"
+#include "gl/texture.hpp"
 #include "gl/vertex_array_object.hpp"
 #include "platform/opengl.hpp"
+#include "utils/contracts.hpp"
 #include "utils/scope_guard.hpp"
+#include <GL/gl.h>
+#include <optional>
 #include <string_view>
 
 #define SHADER_SOURCE(shader_symbol)                                           \
@@ -23,6 +27,10 @@ extern char const _binary_default_vertex_glsl_start[];
 extern char const _binary_default_vertex_glsl_end[];
 extern char const _binary_default_fragment_glsl_start[];
 extern char const _binary_default_fragment_glsl_end[];
+extern char const _binary_mouse_vertex_glsl_start[];
+extern char const _binary_mouse_vertex_glsl_end[];
+extern char const _binary_mouse_fragment_glsl_start[];
+extern char const _binary_mouse_fragment_glsl_end[];
 
 namespace
 {
@@ -149,8 +157,44 @@ auto ColorConverter::initialize() -> void
     opengl::link_program(program);
     opengl::validate_program(program);
 
+    auto mouse_vertex_shader =
+        opengl::create_shader(opengl::ShaderType::vertex);
+    std::string_view const mouse_vertex_shader_source =
+        SHADER_SOURCE(mouse_vertex);
+    opengl::shader_source(mouse_vertex_shader, mouse_vertex_shader_source);
+    opengl::compile_shader(mouse_vertex_shader);
+
+    auto mouse_fragment_shader =
+        opengl::create_shader(opengl::ShaderType::fragment);
+    std::string_view const mouse_fragment_shader_source =
+        SHADER_SOURCE(mouse_fragment);
+    opengl::shader_source(mouse_fragment_shader, mouse_fragment_shader_source);
+    opengl::compile_shader(mouse_fragment_shader);
+
+    auto mouse_program = opengl::create<opengl::Program>();
+    opengl::attach_shader(mouse_program, mouse_vertex_shader);
+    opengl::attach_shader(mouse_program, mouse_fragment_shader);
+
+    opengl::link_program(mouse_program);
+    opengl::validate_program(mouse_program);
+
+    opengl::bind(
+        opengl::program_target, mouse_program, [&](auto program_binding) {
+            opengl::uniform(program_binding,
+                            "screen_dimensions",
+                            float(output_width_),
+                            float(output_height_));
+
+            mouse_dimensions_uniform_ =
+                opengl::get_uniform_location(mouse_program, "mouse_dimensions");
+            mouse_position_uniform_ =
+                opengl::get_uniform_location(mouse_program, "mouse_position");
+        });
+
     auto fbo = opengl::create<opengl::Framebuffer>();
     opengl::bind(opengl::draw_framebuffer_target, fbo, [&](auto binding) {
+        opengl::enable(GL_BLEND);
+        opengl::blend_function(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         opengl::framebuffer_texture(
             binding, GL_COLOR_ATTACHMENT0, output_texture, 0);
 
@@ -161,12 +205,14 @@ auto ColorConverter::initialize() -> void
 
     fbo_ = std::move(fbo);
     input_texture_ = opengl::create<opengl::Texture>();
+    mouse_texture_ = opengl::create<opengl::Texture>();
     output_texture_ = std::move(output_texture);
     vao_ = std::move(vao);
     vertex_buffer_ = std::move(vertex_buffer);
     texture_coords_buffer_ = std::move(texture_coords_buffer);
     index_buffer_ = std::move(index_buffer);
     program_ = std::move(program);
+    mouse_program_ = std::move(mouse_program);
 
     initialized_ = true;
 }
@@ -176,35 +222,69 @@ auto ColorConverter::input_texture() noexcept -> opengl::Texture&
     return input_texture_;
 }
 
+auto ColorConverter::mouse_texture() noexcept -> opengl::Texture&
+{
+    return mouse_texture_;
+}
+
 auto ColorConverter::output_texture() noexcept -> opengl::Texture&
 {
     return output_texture_;
 }
 
-auto ColorConverter::convert() -> void
+auto ColorConverter::convert(std::optional<MouseParameters> mouse_params)
+    -> void
 {
-    opengl::bind(opengl::vertex_array_target, vao_, [&](auto binding) {
+    opengl::bind(opengl::vertex_array_target, vao_, [&](auto vao_binding) {
         /* TODO:
          *  It would be nice to be able to call `bind(...)` with
          *  multiple targets so we don't have to do this...
          */
         auto fbo_binding = opengl::bind(opengl::draw_framebuffer_target, fbo_);
-        auto texture_binding = opengl::bind(
-            opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {}, input_texture_);
         auto element_buffer_binding =
             opengl::bind(opengl::element_array_buffer_target, index_buffer_);
 
-        auto program_in_use = opengl::bind(opengl::program_target, program_);
         opengl::viewport(0, 0, output_width_, output_height_);
-        opengl::clear_color(0.f, 0.f, 0.f, 1.f);
+        opengl::clear_color(1.f, 0.f, 0.f, 1.f);
         opengl::clear(GL_COLOR_BUFFER_BIT);
-        opengl::draw_elements(binding,
-                              element_buffer_binding,
-                              program_in_use,
-                              GL_TRIANGLES,
-                              6,
-                              GL_UNSIGNED_INT,
-                              nullptr);
+
+        opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                     input_texture_,
+                     [&](auto /*texture_binding*/) {
+                         auto program_in_use =
+                             opengl::bind(opengl::program_target, program_);
+                         opengl::draw_elements(vao_binding,
+                                               element_buffer_binding,
+                                               program_in_use,
+                                               GL_TRIANGLES,
+                                               6,
+                                               GL_UNSIGNED_INT,
+                                               nullptr);
+                     });
+
+        if (mouse_params) {
+            opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                         mouse_texture_,
+                         [&](auto /*texture_binding*/) {
+                             auto program_in_use = opengl::bind(
+                                 opengl::program_target, mouse_program_);
+                             opengl::uniform(program_in_use,
+                                             mouse_dimensions_uniform_,
+                                             float(mouse_params->width),
+                                             float(mouse_params->height));
+                             opengl::uniform(program_in_use,
+                                             mouse_position_uniform_,
+                                             float(mouse_params->x),
+                                             float(mouse_params->y));
+                             opengl::draw_elements(vao_binding,
+                                                   element_buffer_binding,
+                                                   program_in_use,
+                                                   GL_TRIANGLES,
+                                                   6,
+                                                   GL_UNSIGNED_INT,
+                                                   nullptr);
+                         });
+        }
     });
 }
 

@@ -3,14 +3,15 @@
 #include "platform/opengl.hpp"
 #include "utils/contracts.hpp"
 #include <GL/gl.h>
+#include <cstdio>
 
 namespace sc::opengl
 {
 
-auto TextureTraits::bind(GLenum target, GLuint name) const -> void
+auto TextureTraits::bind(GLenum target, GLuint name) const noexcept -> void
 {
     gl().glBindTexture(target, name);
-    SC_CHECK_GL_ERROR("glBindTexture");
+    SC_CHECK_GL_ERROR_NOEXCEPT("glBindTexture");
 }
 
 auto TextureTraits::create() const -> GLuint
@@ -24,7 +25,7 @@ auto TextureTraits::create() const -> GLuint
 auto TextureTraits::destroy(GLuint name) const noexcept -> void
 {
     gl().glDeleteTextures(1, &name);
-    SC_CHECK_GL_ERROR("glDeleteTextures");
+    SC_CHECK_GL_ERROR_NOEXCEPT("glDeleteTextures");
 }
 
 } // namespace sc::opengl
