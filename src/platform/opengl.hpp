@@ -123,6 +123,8 @@ struct OpenGL
     void (*glUniform2fv)(GLint location, GLsizei count, const GLfloat* value);
     void (*glUniform3fv)(GLint location, GLsizei count, const GLfloat* value);
     void (*glUniform4fv)(GLint location, GLsizei count, const GLfloat* value);
+    void (*glEnable)(GLenum cap);
+    void (*glBlendFunc)(GLenum sfactor, GLenum dfactor);
 
     /* NOTE:
      *  Extensions...

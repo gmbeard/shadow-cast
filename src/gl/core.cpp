@@ -23,4 +23,16 @@ auto clear_color(float red, float green, float blue, float alpha) noexcept
     gl().glClearColor(red, green, blue, alpha);
 }
 
+auto enable(GLenum cap) -> void
+{
+    gl().glEnable(cap);
+    SC_CHECK_GL_ERROR("glEnable");
+}
+
+auto blend_function(GLenum sfactor, GLenum dfactor) -> void
+{
+    gl().glBlendFunc(sfactor, dfactor);
+    SC_CHECK_GL_ERROR("glBlendFunc");
+}
+
 } // namespace sc::opengl
