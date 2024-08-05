@@ -58,6 +58,18 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .description = "Show usage",
     },
 
+    /* Video quality...
+     */
+    {
+        .short_name = 'q',
+        .long_name = "--video-quality",
+        .option = sc::CmdLineOption::video_quality,
+        .flags = sc::cmdline::VALUE_NUMERIC,
+        .validation = sc::ValidRange { 1, 10 },
+        .description = "Video quality setting from 1-10. 10 being the highest. "
+                       "Default 8",
+    },
+
     /* Sample rate...
      */
     {
@@ -359,7 +371,9 @@ auto get_parameters(CmdLine const& cmdline) noexcept
             sc::CmdLineOption::frame_rate, 60, sc::number_value)),
         .sample_rate = cmdline.get_option_value_or_default(
             sc::CmdLineOption::sample_rate, 48'000, sc::number_value),
-        .output_file = cmdline.args().size() ? cmdline.args()[0] : ""
+        .output_file = cmdline.args().size() ? cmdline.args()[0] : "",
+        .video_quality = cmdline.get_option_value_or_default(
+            sc::CmdLineOption::video_quality, 8, sc::number_value),
     };
 
     if (!params.output_file.size())

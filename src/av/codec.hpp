@@ -26,7 +26,8 @@ auto create_video_encoder(std::string const& encoder_name,
                           AVBufferPool* pool,
                           VideoOutputSize size,
                           FrameTime const& ft,
-                          AVPixelFormat pixel_format) -> sc::CodecContextPtr;
+                          AVPixelFormat pixel_format,
+                          std::uint32_t video_quality) -> sc::CodecContextPtr;
 } // namespace sc
 
 #endif // SHADOW_CAST_AV_CODEC_HPP_INCLUDED

@@ -266,7 +266,8 @@ auto run_wayland(sc::Parameters const& params, sc::wayland::DisplayPtr display)
         nullptr, /*buffer_pool.get(),*/
         { .width = wayland->output_width, .height = wayland->output_height },
         params.frame_time,
-        AV_PIX_FMT_RGB0);
+        AV_PIX_FMT_RGB0,
+        params.video_quality);
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
         format_context.get(), video_encoder_context->codec) };
@@ -474,7 +475,8 @@ auto run(sc::Parameters const& params) -> void
                                  buffer_pool.get(),
                                  size,
                                  params.frame_time,
-                                 AV_PIX_FMT_BGR0);
+                                 AV_PIX_FMT_BGR0,
+                                 params.video_quality);
 
     sc::BorrowedPtr<AVStream> video_stream { avformat_new_stream(
         format_context.get(), video_encoder_context->codec) };

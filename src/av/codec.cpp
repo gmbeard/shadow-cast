@@ -3,10 +3,34 @@
 #include "error.hpp"
 #include "nvidia.hpp"
 #include <X11/Xlib.h>
-#include <libavutil/rational.h>
-extern "C" {
+#include <algorithm>
+#include <cstdio>
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/rational.h>
+
+namespace
+{
+/* Converts input quality in the closed range [1,10] to
+ * a nvenc cq value in the closed range [18,40]. The conversion is
+ * reversed when converted, so a quality value of 1 will equaly a
+ * cq value of 40.
+ */
+auto quality_to_cq_value(std::uint32_t quality) -> std::uint32_t
+{
+    constexpr std::uint32_t const max_cq = 51;
+    constexpr std::uint32_t const min_cq = 18;
+
+    constexpr std::uint32_t const max_quality = 10;
+    constexpr std::uint32_t const min_quality = 1;
+
+    return static_cast<std::uint32_t>(
+        max_cq -
+        ((static_cast<float>(std::clamp(quality, min_quality, max_quality)) -
+          min_quality) /
+         (static_cast<float>(max_quality) - min_quality)) *
+            (static_cast<float>(max_cq) - min_cq));
 }
+} // namespace
 
 namespace sc
 {
@@ -20,7 +44,8 @@ auto create_video_encoder(std::string const& encoder_name,
                           AVBufferPool* pool,
                           VideoOutputSize size,
                           FrameTime const& ft,
-                          AVPixelFormat pixel_format) -> sc::CodecContextPtr
+                          AVPixelFormat pixel_format,
+                          std::uint32_t video_quality) -> sc::CodecContextPtr
 {
     sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
         encoder_name.c_str()) };
@@ -38,7 +63,6 @@ auto create_video_encoder(std::string const& encoder_name,
     video_encoder_context->sample_aspect_ratio = AVRational { 1, 1 };
     video_encoder_context->max_b_frames = 0;
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
-    video_encoder_context->bit_rate = 100'000;
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     video_encoder_context->width = size.width;
     video_encoder_context->height = size.height;
@@ -80,9 +104,14 @@ auto create_video_encoder(std::string const& encoder_name,
 
     video_encoder_context->hw_frames_ctx = av_buffer_ref(frame_context.get());
 
+    std::fprintf(stderr, "Video quality specified %u\n", video_quality);
+    std::fprintf(stderr,
+                 "Using nvenc cq value %u\n",
+                 quality_to_cq_value(video_quality));
     AVDictionary* options = nullptr;
-    av_dict_set_int(&options, "qp", 21, 0);
     av_dict_set(&options, "preset", "p5", 0);
+    av_dict_set(&options, "rc", "vbr", 0);
+    av_dict_set_int(&options, "cq", quality_to_cq_value(video_quality), 0);
 
     if (auto const ret = avcodec_open2(
             video_encoder_context.get(), video_encoder.get(), &options);

@@ -38,6 +38,7 @@ enum class CmdLineOption
     video_encoder,
     version,
     sample_rate,
+    video_quality,
 };
 
 struct Parameters
@@ -48,6 +49,7 @@ struct Parameters
     std::int32_t sample_rate;
     std::string output_file;
     bool strict_frame_time { true };
+    std::int32_t video_quality;
 };
 
 struct NoValidation
