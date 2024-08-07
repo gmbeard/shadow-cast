@@ -209,7 +209,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .validation =
             construct<sc::AcceptableValues>("h264_nvenc", "hevc_nvenc"),
         .description = "Video encoder to use. Valid values are 'h264_nvenc', "
-                       "'hevc_nvenc'. Default 'hevc_nvenc'",
+                       "'hevc_nvenc'. Default 'h264_nvenc'",
     },
 };
 
@@ -487,7 +487,7 @@ auto get_parameters(CmdLine const& cmdline) noexcept
 
     Parameters params {
         .video_encoder = std::string { cmdline.get_option_value_or_default(
-            sc::CmdLineOption::video_encoder, "hevc_nvenc") },
+            sc::CmdLineOption::video_encoder, "h264_nvenc") },
         .audio_encoder = std::string { cmdline.get_option_value_or_default(
             sc::CmdLineOption::audio_encoder, "libopus") },
         .frame_time = from_fps(cmdline.get_option_value_or_default(

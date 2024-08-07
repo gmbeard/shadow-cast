@@ -4,10 +4,10 @@
 #include "allocate_unique.hpp"
 #include "audio_encoder_sink.hpp"
 #include "capture.hpp"
+#include "desktop.hpp"
 #include "exios/exios.hpp"
+#include "gpu.hpp"
 #include "media_container.hpp"
-#include "nvenc_encoder_sink.hpp"
-#include "nvfbc_capture_source.hpp"
 #include "pipewire_capture_source.hpp"
 #include "utils/cmd_line.hpp"
 #include <memory>
@@ -72,25 +72,25 @@ struct SessionCompletion
     bool is_video_callback;
 };
 
+auto create_video_capture(exios::Context const& execution_context,
+                          Parameters const params,
+                          MediaContainer& container,
+                          sc::SupportedDesktop const& desktop,
+                          sc::SupportedGpu const& gpu) -> Capture;
+
 } // namespace detail
 
-template <typename Desktop, typename Completion>
+template <typename Completion>
 auto run_session(exios::Context const& execution_context,
                  exios::Event& cancel_event,
-                 Desktop const& desktop,
+                 SupportedDesktop const& desktop,
+                 SupportedGpu const& gpu,
                  Parameters const& params,
-                 CUcontext cuda_ctx,
                  Completion&& completion) -> void
 {
     auto const alloc = exios::select_allocator(completion);
 
     auto container = allocate_unique<MediaContainer>(alloc, params.output_file);
-    sc::NvfbcCaptureSource video_source { execution_context,
-                                          params,
-                                          desktop.size() };
-    sc::NvencEncoderSink video_sink {
-        execution_context, cuda_ctx, *container, params, desktop.size()
-    };
 
     sc::AudioEncoderSink audio_sink { execution_context, *container, params };
     sc::PipewireCaptureSource audio_source { execution_context,
@@ -100,10 +100,12 @@ auto run_session(exios::Context const& execution_context,
     using SessionStateType = detail::SessionState<std::decay_t<decltype(alloc)>,
                                                   std::decay_t<Completion>>;
 
+    auto& container_tmp = *container;
     auto state = std::allocate_shared<SessionStateType>(
         alloc,
         std::move(container),
-        Capture { std::move(video_source), std::move(video_sink) },
+        detail::create_video_capture(
+            execution_context, params, container_tmp, desktop, gpu),
         Capture { std::move(audio_source), std::move(audio_sink) },
         std::move(completion));
 

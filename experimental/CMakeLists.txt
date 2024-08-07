@@ -7,6 +7,9 @@ target_sources(
         audio_encoder_sink.cpp
         capture.cpp
         cuda.cpp
+        desktop.cpp
+        drm_cuda_capture_source.cpp
+        gpu.cpp
         logging.cpp
         main.cpp
         media_container.cpp
@@ -14,16 +17,20 @@ target_sources(
         nvfbc.cpp
         nvfbc_capture.cpp
         nvfbc_capture_source.cpp
+        nvidia_gpu.cpp
         pipewire_capture_source.cpp
+        session.cpp
         sticky_cancel_event.cpp
         sticky_cancel_timer.cpp
         x11_desktop.cpp
         x11_platform.cpp
+        wayland_desktop.cpp
 )
 
 target_link_libraries(
     shadowcast
     PUBLIC
+    embedded_glsl
     shadow-cast-obj
     Exios::exios
     Pipewire::pipewire

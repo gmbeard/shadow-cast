@@ -125,6 +125,7 @@ struct OpenGL
     void (*glUniform4fv)(GLint location, GLsizei count, const GLfloat* value);
     void (*glEnable)(GLenum cap);
     void (*glBlendFunc)(GLenum sfactor, GLenum dfactor);
+    const GLubyte* (*glGetString)(GLenum name);
 
     /* NOTE:
      *  Extensions...

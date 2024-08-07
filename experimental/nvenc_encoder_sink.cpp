@@ -8,6 +8,7 @@
 #include <libavcodec/codec.h>
 #include <libavutil/dict.h>
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
 
 namespace
@@ -15,7 +16,7 @@ namespace
 
 auto convert_quality_to_cq(std::int32_t setting) -> int
 {
-    auto const transposed_range = 40 - 18;
+    constexpr auto const transposed_range = 51 - 18;
     auto const transposed =
         ((static_cast<float>(setting) - 1) / (10 - 1)) * transposed_range;
 
@@ -43,7 +44,9 @@ auto convert_quality_to_cq(std::int32_t setting) -> int
  */
 auto create_encoder_context(sc::Parameters const& params,
                             sc::VideoOutputSize desktop_resolution,
-                            CUcontext cuda_context) -> sc::CodecContextPtr
+                            CUcontext cuda_context,
+                            sc::NvencEncoderSink::PixelFormat pixel_format)
+    -> sc::CodecContextPtr
 {
     // TODO:
     sc::BorrowedPtr<AVCodec const> video_encoder { avcodec_find_encoder_by_name(
@@ -107,7 +110,10 @@ auto create_encoder_context(sc::Parameters const& params,
         reinterpret_cast<AVHWFramesContext*>(frame_context->data);
     hw_frame_context->width = video_encoder_context->width;
     hw_frame_context->height = video_encoder_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_BGR0;
+    hw_frame_context->sw_format =
+        pixel_format == sc::NvencEncoderSink::PixelFormat::bgra
+            ? AV_PIX_FMT_BGR0
+            : AV_PIX_FMT_RGB0;
     hw_frame_context->format = video_encoder_context->pix_fmt;
 
     hw_frame_context->pool = nullptr;
@@ -129,10 +135,13 @@ auto create_encoder_context(sc::Parameters const& params,
     if (params.bitrate == 0) {
         av_dict_set(&options, "rc", "vbr", 0);
         auto const cq = convert_quality_to_cq(params.quality);
-        sc::log(sc::LogLevel::info, "NVENC using CBR, cq value %i", cq);
+        sc::log(sc::LogLevel::info, "NVENC using VBR, cq value %i", cq);
         av_dict_set_int(&options, "cq", cq, 0);
     }
     else {
+        sc::log(sc::LogLevel::info,
+                "NVENC using CBR, bitrate %llu",
+                params.bitrate);
         av_dict_set(&options, "rc", "cbr", 0);
     }
 
@@ -154,11 +163,12 @@ NvencEncoderSink::NvencEncoderSink(exios::Context ctx,
                                    CUcontext cuda_ctx,
                                    MediaContainer& container,
                                    Parameters const& params,
-                                   VideoOutputSize desktop_resolution)
+                                   VideoOutputSize desktop_resolution,
+                                   PixelFormat pixel_format)
     : ctx_ { ctx }
     , container_ { container }
     , encoder_context_ { create_encoder_context(
-          params, desktop_resolution, cuda_ctx) }
+          params, desktop_resolution, cuda_ctx, pixel_format) }
     , frame_ { av_frame_alloc() }
 {
     container_.add_stream(encoder_context_.get());

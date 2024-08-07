@@ -119,6 +119,7 @@ set_target_properties(
     shadow-cast-kms
     PROPERTIES
         OUTPUT_NAME "${SHADOW_CAST_KMS_BINARY_NAME}"
+        RUNTIME_OUTPUT_DIRECTORY $<IF:$<BOOL:SHADOW_CAST_ENABLE_EXPERIMENTAL>,${PROJECT_BINARY_DIR}/experimental,${CMAKE_CURRENT_BINARY_DIR}>
 )
 
 target_link_libraries(shadow-cast-kms

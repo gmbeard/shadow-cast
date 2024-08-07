@@ -15,11 +15,18 @@ namespace sc
 
 struct NvencEncoderSink
 {
+    enum class PixelFormat
+    {
+        rgba,
+        bgra,
+    };
+
     NvencEncoderSink(exios::Context ctx,
                      CUcontext cuda_ctx,
                      MediaContainer& container,
                      Parameters const& params,
-                     VideoOutputSize desktop_resolution);
+                     VideoOutputSize desktop_resolution,
+                     PixelFormat pixel_format);
 
     using input_type = AVFrame*;
     using completion_result_type = exios::Result<std::error_code>;

@@ -82,6 +82,7 @@ auto load_opengl() -> OpenGL
     TRY_ATTACH_SYMBOL(&opengl.glUniform4fv, "glUniform4fv", lib);
     TRY_ATTACH_SYMBOL(&opengl.glEnable, "glEnable", lib);
     TRY_ATTACH_SYMBOL(&opengl.glBlendFunc, "glBlendFunc", lib);
+    TRY_ATTACH_SYMBOL(&opengl.glGetString, "glGetString", lib);
 
     return opengl;
 }

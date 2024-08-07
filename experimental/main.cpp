@@ -4,23 +4,30 @@
 #include "./pipewire_capture_source.hpp"
 #include "./x11_desktop.hpp"
 #include "capture.hpp"
+#include "desktop.hpp"
+#include "gpu.hpp"
 #include "io/signals.hpp"
 #include "logging.hpp"
 #include "nvenc_encoder_sink.hpp"
+#include "platform/egl.hpp"
+#include "platform/opengl.hpp"
 #include "session.hpp"
 #include "utils/cmd_line.hpp"
+#include "wayland_desktop.hpp"
 #include <signal.h>
+#include <string_view>
 
 #define AUDIO_ENABLED 1
 #define VIDEO_ENABLED 1
 
 auto app(sc::Parameters params) -> void
 {
-    auto cuda_ctx = sc::make_cuda_context();
+    auto desktop = sc::determine_desktop();
+    auto gpu = sc::determine_gpu(desktop);
+
     exios::ContextThread execution_context;
     exios::Signal signal { execution_context, SIGINT };
     exios::Event cancellation_event { execution_context };
-    sc::X11Desktop desktop;
 
     signal.wait([&](exios::SignalResult) {
         sc::log(sc::LogLevel::info, "Signal received");
@@ -32,8 +39,8 @@ auto app(sc::Parameters params) -> void
     sc::run_session(execution_context,
                     cancellation_event,
                     desktop,
+                    gpu,
                     params,
-                    cuda_ctx.get(),
                     [&](exios::Result<std::error_code>) {
                         sc::log(sc::LogLevel::info, "Session completed");
                     });
@@ -56,6 +63,7 @@ struct PipewireInit
 
 auto main(int argc, char const** argv) -> int
 {
+    sc::load_gl_extensions();
     sc::block_signals({ SIGINT, SIGCHLD });
     auto params = sc::get_parameters(sc::parse_cmd_line(argc - 1, argv + 1));
 

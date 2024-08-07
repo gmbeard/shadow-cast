@@ -3,16 +3,20 @@
 
 #include "av/codec.hpp"
 #include "display/display.hpp"
+#include <EGL/egl.h>
 
 namespace sc
 {
 struct X11Desktop
 {
-    X11Desktop();
+    X11Desktop() noexcept;
 
+    operator bool() const noexcept;
     auto size() const noexcept -> VideoOutputSize;
+    auto egl_display() const noexcept -> EGLDisplay;
 
 private:
+    bool initialized_ { false };
     XDisplayPtr display_;
 };
 } // namespace sc
