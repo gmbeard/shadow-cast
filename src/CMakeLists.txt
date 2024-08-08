@@ -1,7 +1,9 @@
+if (NOT SHADOW_CAST_ENABLE_EXPERIMENTAL)
 configure_file(
     config.hpp.in
     ${CMAKE_CURRENT_BINARY_DIR}/config.hpp
 )
+endif()
 
 add_library(shadow-cast-obj
     OBJECT

@@ -8,12 +8,14 @@
 #include "gpu.hpp"
 #include "io/signals.hpp"
 #include "logging.hpp"
+#include "metrics/formatting.hpp"
 #include "nvenc_encoder_sink.hpp"
 #include "platform/egl.hpp"
 #include "platform/opengl.hpp"
 #include "session.hpp"
 #include "utils/cmd_line.hpp"
 #include "wayland_desktop.hpp"
+#include <iostream>
 #include <signal.h>
 #include <string_view>
 
@@ -49,6 +51,19 @@ auto app(sc::Parameters params) -> void
         static_cast<void>(execution_context.run());
         sc::log(sc::LogLevel::info, "Finalizing output container");
         sc::log(sc::LogLevel::info, "Finished");
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+        sc::metrics::format_histogram(
+            std::cout,
+            sc::metrics::get_histogram(sc::metrics::audio_metrics),
+            "Frame time (ns)",
+            "Audio Frame Times");
+        std::cout << '\n';
+        sc::metrics::format_histogram(
+            std::cout,
+            sc::metrics::get_histogram(sc::metrics::video_metrics),
+            "Frame time (ns)",
+            "Video Frame Times");
+#endif
     }
     catch (std::exception const& e) {
         sc::log(sc::LogLevel::error, "%s", e.what());

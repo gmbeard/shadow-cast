@@ -1,3 +1,8 @@
+configure_file(
+    config.hpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/config.hpp
+)
+
 add_executable(shadowcast)
 target_sources(
     shadowcast
@@ -25,6 +30,11 @@ target_sources(
         x11_desktop.cpp
         x11_platform.cpp
         wayland_desktop.cpp
+)
+
+target_include_directories(shadowcast
+    PUBLIC
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(

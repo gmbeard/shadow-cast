@@ -1,9 +1,11 @@
 #ifndef SHADOW_CAST_FRAME_CAPTURE_LOOP_HPP_INCLUDED
 #define SHADOW_CAST_FRAME_CAPTURE_LOOP_HPP_INCLUDED
 
+#include "config.hpp"
 #include "exios/exios.hpp"
 #include "frame_capture.hpp"
 #include "logging.hpp"
+#include "metrics/metrics.hpp"
 #include "utils/contracts.hpp"
 #include <chrono>
 
@@ -53,6 +55,11 @@ struct AudioCaptureLoopOperation
     Source& source;
     Sink& sink;
     Completion completion;
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+    using ClockType = std::chrono::high_resolution_clock;
+    using TimePoint = decltype(ClockType::now());
+    TimePoint frame_start = ClockType::now();
+#endif
 
     auto initiate() -> void
     {
@@ -71,6 +78,9 @@ struct AudioCaptureLoopOperation
         }
 
         auto const alloc = exios::select_allocator(completion);
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+        frame_start = ClockType::now();
+#endif
         frame_capture(source,
                       sink,
                       exios::use_allocator(std::bind(std::move(*this),
@@ -87,6 +97,13 @@ struct AudioCaptureLoopOperation
             return;
         }
 
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+        namespace ch = std::chrono;
+        metrics::add_frame_time(
+            metrics::audio_metrics,
+            ch::duration_cast<ch::nanoseconds>(ClockType::now() - frame_start)
+                .count());
+#endif
         initiate();
     }
 
@@ -178,6 +195,13 @@ struct VideoCaptureLoopOperation
         namespace ch = std::chrono;
 
         auto const frame_finish = ClockType::now();
+
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+        metrics::add_frame_time(
+            metrics::video_metrics,
+            ch::duration_cast<ch::nanoseconds>(frame_finish - frame_start)
+                .count());
+#endif
 
         if (!result) {
             finalize(
