@@ -130,7 +130,7 @@ auto create_encoder_context(sc::Parameters const& params,
     av_dict_set(&options, "preset", "p5", 0);
     if (video_encoder->id == AV_CODEC_ID_H264) {
         av_dict_set(&options, "profile", "high", 0);
-        av_dict_set(&options, "coder", "cabac", 0);
+        av_dict_set(&options, "coder", "cavlc", 0);
     }
     if (params.bitrate == 0) {
         av_dict_set(&options, "rc", "vbr", 0);
