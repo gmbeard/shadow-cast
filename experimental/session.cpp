@@ -20,16 +20,23 @@ auto create_video_capture(exios::Context const& execution_context,
                         NvidiaGpu const& gpu) const -> Capture
         {
             VideoOutputSize dimensions = desktop.size();
+            VideoOutputScale scale { .width = 1.f, .height = 1.f };
+
             if (params.resolution) {
                 dimensions.width = params.resolution->width;
                 dimensions.height = params.resolution->height;
+
+                scale.width =
+                    float(params.resolution->width) / desktop.size().width;
+                scale.height =
+                    float(params.resolution->height) / desktop.size().height;
             }
 
-            sc::DRMCudaCaptureSource video_source { execution_context,
-                                                    params,
-                                                    dimensions,
-                                                    gpu.cuda_context(),
-                                                    desktop.egl_display() };
+            sc::DRMCudaCaptureSource video_source {
+                execution_context,  params,
+                dimensions,         scale,
+                gpu.cuda_context(), desktop.egl_display()
+            };
             sc::NvencEncoderSink video_sink {
                 execution_context, gpu.cuda_context(),
                 container,         params,

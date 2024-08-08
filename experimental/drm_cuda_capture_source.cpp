@@ -126,6 +126,7 @@ namespace sc
 DRMCudaCaptureSource::DRMCudaCaptureSource(exios::Context context,
                                            Parameters const& params,
                                            VideoOutputSize output_size,
+                                           VideoOutputScale output_scale,
                                            CUcontext cuda_ctx,
                                            EGLDisplay egl_display) noexcept
     : ctx_ { context }
@@ -133,7 +134,10 @@ DRMCudaCaptureSource::DRMCudaCaptureSource(exios::Context context,
     , frame_interval_ { params.frame_time.value() }
     , cuda_ctx_ { cuda_ctx }
     , egl_display_ { std::move(egl_display) }
-    , color_converter_ { output_size.width, output_size.height }
+    , color_converter_ { output_size.width,
+                         output_size.height,
+                         output_scale.width,
+                         output_scale.height }
 {
 }
 

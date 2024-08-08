@@ -46,9 +46,13 @@ auto get_shader_source(char const* first, char const* last) noexcept
 namespace sc
 {
 ColorConverter::ColorConverter(std::uint32_t output_width,
-                               std::uint32_t output_height) noexcept
+                               std::uint32_t output_height,
+                               float scale_width,
+                               float scale_height) noexcept
     : output_width_ { output_width }
     , output_height_ { output_height }
+    , scale_width_ { scale_width }
+    , scale_height_ { scale_height }
 {
 }
 
@@ -184,6 +188,10 @@ auto ColorConverter::initialize() -> void
                             "screen_dimensions",
                             float(output_width_),
                             float(output_height_));
+            opengl::uniform(program_binding,
+                            "screen_scale",
+                            float(scale_width_),
+                            float(scale_height_));
 
             mouse_dimensions_uniform_ =
                 opengl::get_uniform_location(mouse_program, "mouse_dimensions");

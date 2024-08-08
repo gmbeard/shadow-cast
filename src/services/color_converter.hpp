@@ -21,7 +21,9 @@ struct MouseParameters
 struct ColorConverter
 {
     ColorConverter(std::uint32_t output_width,
-                   std::uint32_t output_height) noexcept;
+                   std::uint32_t output_height,
+                   float scale_width = 1.f,
+                   float scale_height = 1.f) noexcept;
 
     auto initialize() -> void;
     [[nodiscard]] auto input_texture() noexcept -> opengl::Texture&;
@@ -42,6 +44,8 @@ private:
     opengl::Program mouse_program_;
     std::uint32_t output_width_;
     std::uint32_t output_height_;
+    float scale_width_;
+    float scale_height_;
     GLuint mouse_dimensions_uniform_;
     GLuint mouse_position_uniform_;
     bool initialized_ { false };

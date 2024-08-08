@@ -4,6 +4,7 @@
 #include "av/fwd.hpp"
 #include "display/display.hpp"
 #include "nvidia.hpp"
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -14,11 +15,15 @@ struct CodecContextDeleter
     auto operator()(AVCodecContext* ptr) noexcept -> void;
 };
 
-struct VideoOutputSize
+template <typename T>
+struct VideoOutputSizeBase
 {
-    std::uint32_t width;
-    std::uint32_t height;
+    T width;
+    T height;
 };
+
+using VideoOutputSize = VideoOutputSizeBase<std::uint32_t>;
+using VideoOutputScale = VideoOutputSizeBase<float>;
 
 using CodecContextPtr = std::unique_ptr<AVCodecContext, CodecContextDeleter>;
 auto create_video_encoder(std::string const& encoder_name,

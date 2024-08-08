@@ -24,6 +24,7 @@ struct DRMCudaCaptureSource
     DRMCudaCaptureSource(exios::Context context,
                          Parameters const& params,
                          VideoOutputSize output_size,
+                         VideoOutputScale output_scale,
                          CUcontext cuda_ctx,
                          EGLDisplay egl_display) noexcept;
 

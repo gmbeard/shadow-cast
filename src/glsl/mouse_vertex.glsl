@@ -3,6 +3,7 @@ layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec2 aTexCoord;
 
 uniform vec2 screen_dimensions;
+uniform vec2 screen_scale;
 uniform vec2 mouse_dimensions;
 uniform vec2 mouse_position;
 
@@ -13,8 +14,10 @@ void main()
     /* NOTE:
      *  We must scale all the mouse plane's dimensions and screen position
      * to -1.0,1.0 coords...
-     * - First scale the mouse plane to the screen scale.
-     * - Then offset the mouse position by _adding_ half its w/h,
+     * - Scale the mouse dim & pos by the screen output scale (the output
+     *   might be different to the native screen resolution).
+     * - Scale the mouse plane to the screen scale.
+     * - Offset the mouse position by _adding_ half its w/h,
      *   and _subtracting_ half the screen w/h.
      * - Finally translate its x/y position by dividing by half screen
      *   w/h.
@@ -26,7 +29,10 @@ void main()
      * copy it to the encoder stage).
      */
 
-    vec2 scaled_dimensions = mouse_dimensions / screen_dimensions;
+    vec2 mouse_dim_scaled = mouse_dimensions * screen_scale;
+    vec2 mouse_pos_scaled = mouse_position * screen_scale;
+
+    vec2 scaled_dimensions = mouse_dim_scaled / screen_dimensions;
     mat4 scale;
     scale[0] = vec4(scaled_dimensions.x, 0.0, 0.0, 0.0);
     scale[1] = vec4(0.0, scaled_dimensions.y, 0.0, 0.0);
@@ -35,7 +41,7 @@ void main()
 
     vec2 half_screen = screen_dimensions / 2;
 
-    vec2 mpos = (mouse_position + mouse_dimensions / 2) - half_screen;
+    vec2 mpos = (mouse_pos_scaled + mouse_dim_scaled / 2) - half_screen;
 
     mat4 translate;
     translate[0] = vec4(1.0, 0.0, 0.0, 0.0);
