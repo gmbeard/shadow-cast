@@ -187,12 +187,15 @@ struct Capture
             detail::CaptureCallback { alloc, std::move(completion) });
     }
 
+    auto init() -> void;
+
 private:
     struct CaptureInterface
     {
         virtual ~CaptureInterface();
         virtual auto cancel() noexcept -> void = 0;
         virtual auto run(detail::CaptureCallback&&) -> void = 0;
+        virtual auto initialize() -> void = 0;
     };
 
     template <typename Source, typename Sink, typename Allocator>
@@ -218,6 +221,14 @@ private:
                 source_,
                 sink_,
                 exios::use_allocator(std::move(completion), allocator_));
+        }
+
+        auto initialize() -> void override
+        {
+            if constexpr (RequiresInit<Source>) {
+                log(LogLevel::info, "Initializing %s", source_.name());
+                source_.init();
+            }
         }
 
     private:

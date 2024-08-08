@@ -120,6 +120,9 @@ auto run_session(exios::Context const& execution_context,
         state.reset();
     });
 
+    video.init();
+    audio.init();
+
     video.run(detail::SessionCompletion { state, true });
     audio.run(detail::SessionCompletion { state, false });
 }

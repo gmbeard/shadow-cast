@@ -336,11 +336,6 @@ auto frame_capture_loop(Source& source, Sink& sink, Completion&& completion)
     -> void
 requires(IntervalBasedSource<Source> || EventTriggeredSource<Source>)
 {
-    if constexpr (RequiresInit<Source>) {
-        log(LogLevel::info, "Initializing %s", source.name());
-        source.init();
-    }
-
     auto const alloc = exios::select_allocator(completion);
     auto fn = [&source, &sink, completion = std::move(completion)](
                   exios::Result<std::error_code> result) mutable {

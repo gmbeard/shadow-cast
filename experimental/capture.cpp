@@ -51,6 +51,13 @@ auto Capture::cancel() noexcept -> void
     interface_->cancel();
 }
 
+auto Capture::init() -> void
+{
+    SC_EXPECT(interface_);
+    // cppcheck-suppress [nullPointerRedundantCheck]
+    interface_->initialize();
+}
+
 Capture::CaptureInterface::~CaptureInterface() {}
 
 } // namespace sc
