@@ -158,7 +158,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .description =
             "Capture quality. Accepted values are 1 to 10 inclusive. "
             "10 is the highest quality. "
-            "Default 7. This implies constant quality mode.",
+            "Default 8. This implies constant quality mode.",
     },
 
     /* Capture resolution...
@@ -496,7 +496,7 @@ auto get_parameters(CmdLine const& cmdline) noexcept
             sc::CmdLineOption::sample_rate, 48'000, sc::number_value),
         .output_file = cmdline.args().size() ? cmdline.args()[0] : "",
         .quality = cmdline.get_option_value_or_default(
-            sc::CmdLineOption::quality, 7, sc::number_value),
+            sc::CmdLineOption::quality, 8, sc::number_value),
     };
 
     if (cmdline.has_option(CmdLineOption::resolution)) {
