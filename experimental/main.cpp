@@ -63,6 +63,12 @@ auto app(sc::Parameters params) -> void
             sc::metrics::get_histogram(sc::metrics::video_metrics),
             "Frame time (ns)",
             "Video Frame Times");
+        std::cout << '\n';
+        sc::metrics::format_histogram(
+            std::cout,
+            sc::metrics::get_histogram(sc::metrics::cpu_metrics),
+            "CPU %",
+            "CPU usage / frame");
 #endif
     }
     catch (std::exception const& e) {

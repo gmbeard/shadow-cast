@@ -2,10 +2,14 @@
 #define SHADOW_CAST_FRAME_CAPTURE_LOOP_HPP_INCLUDED
 
 #include "config.hpp"
+#include "cpu_usage.hpp"
 #include "exios/exios.hpp"
 #include "frame_capture.hpp"
 #include "logging.hpp"
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
+#include "cpu_usage.hpp"
 #include "metrics/metrics.hpp"
+#endif
 #include "utils/contracts.hpp"
 #include <chrono>
 
@@ -147,6 +151,7 @@ struct VideoCaptureLoopOperation
     };
     TimePoint frame_start = ClockType::now();
     TimePoint loop_start = frame_start;
+    std::uint64_t cpu_time = get_cpu_usage();
     std::size_t frame_backlog { 0 };
     std::size_t frame_number { 0 };
     std::int64_t total_frame_time { 0 };
@@ -182,6 +187,7 @@ struct VideoCaptureLoopOperation
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
 
+        cpu_time = get_cpu_usage();
         frame_capture(source,
                       sink,
                       exios::use_allocator(std::bind(std::move(*this),
@@ -197,10 +203,18 @@ struct VideoCaptureLoopOperation
         auto const frame_finish = ClockType::now();
 
 #ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
-        metrics::add_frame_time(
-            metrics::video_metrics,
+        auto const metrics_elapsed_ns =
             ch::duration_cast<ch::nanoseconds>(frame_finish - frame_start)
-                .count());
+                .count();
+        auto const metrics_total_ns =
+            ch::duration_cast<ch::nanoseconds>(ClockType::now() - loop_start)
+                .count();
+        metrics::add_frame_time(metrics::video_metrics, metrics_elapsed_ns);
+        metrics::add_frame_time(
+            metrics::cpu_metrics,
+            static_cast<std::size_t>(
+                static_cast<float>(get_cpu_usage() - cpu_time) /
+                metrics_total_ns * 1000));
 #endif
 
         if (!result) {

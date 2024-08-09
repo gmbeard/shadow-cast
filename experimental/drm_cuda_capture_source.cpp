@@ -391,11 +391,6 @@ auto DRMCudaCaptureSource::capture_(
 
     frame->pts = frame_number_++;
 
-#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
-    metrics::add_frame_time(metrics::video_metrics,
-                            global_elapsed.nanosecond_value() - frame_start);
-#endif
-
     completion(*this, frame, data);
 }
 

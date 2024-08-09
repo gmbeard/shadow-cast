@@ -11,6 +11,7 @@ target_sources(
         audio_capture.cpp
         audio_encoder_sink.cpp
         capture.cpp
+        "$<$<BOOL:SHADOW_CAST_ENABLE_HISTOGRAMS>:${CMAKE_CURRENT_SOURCE_DIR}/cpu_usage.cpp>"
         cuda.cpp
         desktop.cpp
         drm_cuda_capture_source.cpp
