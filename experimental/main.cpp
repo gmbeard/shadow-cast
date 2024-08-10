@@ -50,6 +50,8 @@ auto app(sc::Parameters params) -> void
                     });
 
     try {
+        sc::log(sc::LogLevel::info,
+                "Capture session running. Ctrl+C / SIGINT to stop");
         static_cast<void>(execution_context.run());
         sc::log(sc::LogLevel::info, "Finalizing output container");
         sc::log(sc::LogLevel::info, "Finished");

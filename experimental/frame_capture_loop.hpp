@@ -16,6 +16,8 @@
 namespace sc
 {
 
+constexpr std::size_t const kFrameLagWarningLevel = 10;
+
 template <typename T>
 concept IntervalBasedSource = requires(T& val) {
     {
@@ -155,7 +157,7 @@ struct VideoCaptureLoopOperation
     std::size_t frame_backlog { 0 };
     std::size_t frame_number { 0 };
     std::int64_t total_frame_time { 0 };
-    bool frame_lag { false };
+    std::size_t frame_lag { 0 };
     std::size_t frame_lag_start { 0 };
 
     auto initiate() -> void
@@ -234,20 +236,20 @@ struct VideoCaptureLoopOperation
         std::size_t delta = expected_frames * frame_time - total_duration_ns;
 
         if (expected_frames > frame_number) {
-            frame_lag = true;
+            frame_lag = expected_frames - frame_number;
             delta = 0;
         }
         else {
-            if (frame_lag) {
+            if (frame_lag >= kFrameLagWarningLevel) {
                 log(LogLevel::warn,
-                    "%s: Frame lag detected between frames %llu and "
-                    "%llu (%llu frames). Output may contain artifacts.",
+                    "%s: Lag detected between frames %llu and "
+                    "%llu (%llu frames). Output video may contain stuttering.",
                     source.name(),
                     frame_lag_start,
                     frame_number,
-                    frame_number - frame_lag_start);
+                    frame_lag);
             }
-            frame_lag = false;
+            frame_lag = 0;
             frame_lag_start = frame_number;
         }
 

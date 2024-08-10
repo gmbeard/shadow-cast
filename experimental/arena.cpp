@@ -1,5 +1,6 @@
 #include "arena.hpp"
 #include "config.hpp"
+#include "logging.hpp"
 #include "utils/contracts.hpp"
 #include "utils/scope_guard.hpp"
 #include <array>
@@ -104,9 +105,11 @@ Arenas::~Arenas()
 auto create_memory_arenas() -> Arenas
 {
     if constexpr (!kNumberOfMemoryArenas) {
+        log(LogLevel::info, "Using standard heap allocation strategy");
         return Arenas {};
     }
 
+    log(LogLevel::info, "Using memory arena allocation strategy");
     std::size_t n = 0;
     auto guard = sc::ScopeGuard { [&] {
         std::size_t i = 0;
