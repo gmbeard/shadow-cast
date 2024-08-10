@@ -43,17 +43,8 @@ namespace sc
 {
 namespace detail
 {
-auto determine_gpu(EGLDisplay display) -> SupportedGpu
+auto determine_gpu(std::string_view vendor) -> SupportedGpu
 {
-    SC_EXPECT(display);
-
-    std::string_view vendor = egl().eglQueryString(display, EGL_VENDOR);
-    log(LogLevel::info, "GPU vendor: %.*s", vendor.size(), vendor.data());
-
-    std::string_view renderer =
-        reinterpret_cast<char const*>(sc::gl().glGetString(GL_RENDERER));
-    log(LogLevel::info, "GPU: %.*s", renderer.size(), renderer.data());
-
     switch (get_vendor(vendor)) {
     case GpuVendor::nvidia:
         return NvidiaGpu {};
@@ -67,7 +58,16 @@ auto determine_gpu(SupportedDesktop const& supported_desktop) -> SupportedGpu
 {
     return std::visit(
         [](auto const& desktop) {
-            return detail::determine_gpu(desktop.egl_display());
+            std::string_view vendor = desktop.gpu_vendor();
+            log(LogLevel::info,
+                "GPU vendor: %.*s",
+                vendor.size(),
+                vendor.data());
+
+            std::string_view renderer = desktop.gpu_id();
+            log(LogLevel::info, "GPU: %.*s", renderer.size(), renderer.data());
+
+            return detail::determine_gpu(vendor);
         },
         supported_desktop);
 }

@@ -4,6 +4,7 @@
 #include "desktop.hpp"
 #include "nvidia_gpu.hpp"
 #include <EGL/egl.h>
+#include <string_view>
 #include <variant>
 namespace sc
 {
@@ -11,13 +12,7 @@ using SupportedGpu = std::variant<NvidiaGpu>;
 
 namespace detail
 {
-auto determine_gpu(EGLDisplay) -> SupportedGpu;
-}
-
-template <typename Desktop>
-auto determine_gpu(Desktop const& desktop) -> SupportedGpu
-{
-    return detail::determine_gpu(desktop.egl_display());
+auto determine_gpu(std::string_view vendor) -> SupportedGpu;
 }
 
 auto determine_gpu(SupportedDesktop const& desktop) -> SupportedGpu;

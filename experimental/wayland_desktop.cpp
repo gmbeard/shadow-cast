@@ -1,6 +1,7 @@
 #include "wayland_desktop.hpp"
 #include "logging.hpp"
 #include "platform/egl.hpp"
+#include "platform/opengl.hpp"
 #include "platform/wayland.hpp"
 #include <optional>
 #include <utility>
@@ -311,4 +312,15 @@ auto EGL::operator=(EGL&& rhs) noexcept -> EGL&
 
 } // namespace detail
 
+auto WaylandDesktop::gpu_vendor() const noexcept -> std::string_view
+{
+    SC_EXPECT(initialized_);
+    return egl().eglQueryString(egl_.display, EGL_VENDOR);
+}
+
+auto WaylandDesktop::gpu_id() const noexcept -> std::string_view
+{
+    SC_EXPECT(initialized_);
+    return reinterpret_cast<char const*>(gl().glGetString(GL_RENDERER));
+}
 } // namespace sc

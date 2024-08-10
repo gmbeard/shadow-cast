@@ -4,6 +4,7 @@
 #include "av/codec.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <string_view>
 #include <wayland-client-protocol.h>
 #include <wayland-egl-core.h>
 
@@ -119,6 +120,8 @@ struct WaylandDesktop
     operator bool() const noexcept;
     auto size() const noexcept -> VideoOutputSize const&;
     auto egl_display() const noexcept -> EGLDisplay;
+    auto gpu_vendor() const noexcept -> std::string_view;
+    auto gpu_id() const noexcept -> std::string_view;
 
 private:
     bool initialized_ { false };
