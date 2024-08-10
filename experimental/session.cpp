@@ -1,4 +1,5 @@
 #include "session.hpp"
+#include "arena.hpp"
 #include "av/codec.hpp"
 #include "drm_cuda_capture_source.hpp"
 #include "nvenc_encoder_sink.hpp"
@@ -43,7 +44,9 @@ auto create_video_capture(exios::Context const& execution_context,
                 desktop.size(),    NvencEncoderSink::PixelFormat::rgba
             };
 
-            return Capture { std::move(video_source), std::move(video_sink) };
+            return Capture { std::move(video_source),
+                             std::move(video_sink),
+                             VideoOperationAllocator<void> {} };
         }
 
         auto operator()(X11Desktop const& desktop, NvidiaGpu const& gpu) const
@@ -58,7 +61,9 @@ auto create_video_capture(exios::Context const& execution_context,
                 desktop.size(),    NvencEncoderSink::PixelFormat::bgra
             };
 
-            return Capture { std::move(video_source), std::move(video_sink) };
+            return Capture { std::move(video_source),
+                             std::move(video_sink),
+                             VideoOperationAllocator<void> {} };
         }
 
         exios::Context const& execution_context;

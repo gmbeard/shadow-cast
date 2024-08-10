@@ -3,6 +3,7 @@
 #include "./nvfbc_capture_source.hpp"
 #include "./pipewire_capture_source.hpp"
 #include "./x11_desktop.hpp"
+#include "arena.hpp"
 #include "capture.hpp"
 #include "desktop.hpp"
 #include "gpu.hpp"
@@ -14,6 +15,7 @@
 #include "platform/opengl.hpp"
 #include "session.hpp"
 #include "utils/cmd_line.hpp"
+#include "utils/scope_guard.hpp"
 #include "wayland_desktop.hpp"
 #include <iostream>
 #include <signal.h>
@@ -84,6 +86,8 @@ struct PipewireInit
 
 auto main(int argc, char const** argv) -> int
 {
+    auto const memory_arenas = sc::create_memory_arenas();
+
     sc::load_gl_extensions();
     sc::block_signals({ SIGINT, SIGCHLD });
     auto params = sc::get_parameters(sc::parse_cmd_line(argc - 1, argv + 1));

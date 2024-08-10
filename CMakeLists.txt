@@ -99,6 +99,12 @@ option(
     OFF
 )
 
+option(
+    SHADOW_CAST_USE_MEMORY_ARENAS
+    "Enable memory arena allocation strategy"
+    ON
+)
+
 if (SHADOW_CAST_ENABLE_ASAN)
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)

@@ -2,6 +2,7 @@
 #define SHADOW_CAST_SESSION_HPP_INCLUDED
 
 #include "allocate_unique.hpp"
+#include "arena.hpp"
 #include "audio_encoder_sink.hpp"
 #include "capture.hpp"
 #include "desktop.hpp"
@@ -106,7 +107,9 @@ auto run_session(exios::Context const& execution_context,
         std::move(container),
         detail::create_video_capture(
             execution_context, params, container_tmp, desktop, gpu),
-        Capture { std::move(audio_source), std::move(audio_sink) },
+        Capture { std::move(audio_source),
+                  std::move(audio_sink),
+                  AudioOperationAllocator<void> {} },
         std::move(completion));
 
     state->media_container->write_header();

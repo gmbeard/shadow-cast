@@ -59,24 +59,25 @@ struct FrameCaptureOperation
         }
 
         auto const alloc = exios::select_allocator(completion_);
-        sink_.write(
-            std::move(result.value()),
-            [completion = std::move(completion_),
-             capture_duration,
-             sink_write_start = ClockType::now()](auto sink_result) mutable {
-                std::chrono::nanoseconds const sink_write_duration =
-                    ClockType::now() - sink_write_start;
-                if (sink_result.is_error_value()) {
-                    std::move(completion)(FrameCaptureResult {
-                        exios::result_error(sink_result.error()) });
-                    return;
-                }
+        auto fn = [completion = std::move(completion_),
+                   capture_duration,
+                   sink_write_start =
+                       ClockType::now()](auto sink_result) mutable {
+            std::chrono::nanoseconds const sink_write_duration =
+                ClockType::now() - sink_write_start;
+            if (sink_result.is_error_value()) {
+                std::move(completion)(FrameCaptureResult {
+                    exios::result_error(sink_result.error()) });
+                return;
+            }
 
-                std::move(completion)(
-                    FrameCaptureResult { exios::result_ok(FrameCaptureMetrics {
-                        .capture_duration = capture_duration,
-                        .sink_write_duration = sink_write_duration }) });
-            });
+            std::move(completion)(
+                FrameCaptureResult { exios::result_ok(FrameCaptureMetrics {
+                    .capture_duration = capture_duration,
+                    .sink_write_duration = sink_write_duration }) });
+        };
+        sink_.write(std::move(result.value()),
+                    exios::use_allocator(std::move(fn), alloc));
     }
 
     Source& source_;
