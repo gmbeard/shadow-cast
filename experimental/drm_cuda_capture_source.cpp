@@ -118,6 +118,53 @@ auto find_drm_helper_binary()
 
     return kms_bin_path;
 }
+auto copy_texture_to_frame(CUcontext cuda_context,
+                           sc::opengl::Texture const& texture,
+                           AVFrame* frame) -> void
+{
+    CUgraphicsResource cuda_gfx_resource { nullptr };
+    CUarray cuda_array { nullptr };
+
+    register_gl_texture_in_cuda(cuda_context,      /* in */
+                                texture.name(),    /* in */
+                                cuda_gfx_resource, /* out */
+                                cuda_array);       /* out */
+
+    SC_SCOPE_GUARD([&] {
+        CUcontext old_ctx;
+        sc::cuda().cuCtxPushCurrent_v2(cuda_context);
+        SC_SCOPE_GUARD([&] { sc::cuda().cuCtxPopCurrent_v2(&old_ctx); });
+
+        if (cuda_gfx_resource) {
+            sc::cuda().cuGraphicsUnmapResources(1, &cuda_gfx_resource, 0);
+            sc::cuda().cuGraphicsUnregisterResource(cuda_gfx_resource);
+            cuda_gfx_resource = nullptr;
+        }
+    });
+
+    CUDA_MEMCPY2D memcpy_struct {};
+
+    memcpy_struct.srcXInBytes = 0;
+    memcpy_struct.srcY = 0;
+    memcpy_struct.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+    memcpy_struct.dstXInBytes = 0;
+    memcpy_struct.dstY = 0;
+    memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    memcpy_struct.srcArray = cuda_array;
+    memcpy_struct.dstDevice = reinterpret_cast<CUdeviceptr>(frame->data[0]);
+    memcpy_struct.dstPitch = frame->linesize[0];
+    memcpy_struct.WidthInBytes = frame->linesize[0];
+    memcpy_struct.Height = frame->height;
+
+    if (auto const cuda_result = sc::cuda().cuMemcpy2D_v2(&memcpy_struct);
+        cuda_result != CUDA_SUCCESS) {
+        char const* err = "unknown";
+        sc::cuda().cuGetErrorString(cuda_result, &err);
+        throw std::runtime_error {
+            std::string { " Failed to copy CUDA buffer: " } + err
+        };
+    }
+}
 } // namespace
 
 namespace sc
@@ -216,10 +263,6 @@ auto DRMCudaCaptureSource::capture_(
      * frame.
      */
 
-#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
-    auto const frame_start = global_elapsed.nanosecond_value();
-#endif
-
     auto const r =
         get_drm_data(drm_socket_, kDRMDataTimeoutMs, &drm_proc_mask_);
 
@@ -273,26 +316,29 @@ auto DRMCudaCaptureSource::capture_(
     };
     // clang-format on
 
-    EGLImage input_image =
-        egl().eglCreateImage(egl_display_,
-                             EGL_NO_CONTEXT,
-                             EGL_LINUX_DMA_BUF_EXT,
-                             static_cast<EGLClientBuffer>(nullptr),
-                             img_attr);
+    {
+        EGLImage input_image =
+            egl().eglCreateImage(egl_display_,
+                                 EGL_NO_CONTEXT,
+                                 EGL_LINUX_DMA_BUF_EXT,
+                                 static_cast<EGLClientBuffer>(nullptr),
+                                 img_attr);
 
-    if (input_image == EGL_NO_IMAGE) {
-        throw std::runtime_error { "eglCreateImage input failed: " +
-                                   std::to_string(egl().eglGetError()) };
+        if (input_image == EGL_NO_IMAGE) {
+            throw std::runtime_error { "eglCreateImage input failed: " +
+                                       std::to_string(egl().eglGetError()) };
+        }
+
+        opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                     color_converter_.input_texture(),
+                     [&](auto) {
+                         gl().glEGLImageTargetTexture2DOES(
+                             GL_TEXTURE_EXTERNAL_OES, input_image);
+                     });
+
+        SC_SCOPE_GUARD(
+            [&] { egl().eglDestroyImage(egl_display_, input_image); });
     }
-
-    opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
-                 color_converter_.input_texture(),
-                 [&](auto) {
-                     gl().glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES,
-                                                       input_image);
-                 });
-
-    EGLImage mouse_image = EGL_NO_IMAGE;
 
     std::optional<MouseParameters> mouse_params {};
 
@@ -310,7 +356,7 @@ auto DRMCudaCaptureSource::capture_(
         };
         // clang-format on
 
-        mouse_image =
+        EGLImage mouse_image =
             egl().eglCreateImage(egl_display_,
                                  EGL_NO_CONTEXT,
                                  EGL_LINUX_DMA_BUF_EXT,
@@ -321,6 +367,9 @@ auto DRMCudaCaptureSource::capture_(
             throw std::runtime_error { "eglCreateImage input failed: " +
                                        std::to_string(egl().eglGetError()) };
         }
+
+        SC_SCOPE_GUARD(
+            [&] { egl().eglDestroyImage(egl_display_, mouse_image); });
 
         opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
                      color_converter_.mouse_texture(),
@@ -336,61 +385,8 @@ auto DRMCudaCaptureSource::capture_(
     }
 
     color_converter_.convert(mouse_params);
-
-    SC_SCOPE_GUARD([&] {
-        egl().eglDestroyImage(egl_display_, input_image);
-        if (has_mouse_plane) {
-            egl().eglDestroyImage(egl_display_, mouse_image);
-        }
-    });
-
-    CUgraphicsResource cuda_gfx_resource { nullptr };
-    CUarray cuda_array { nullptr };
-
-    register_gl_texture_in_cuda(
-        cuda_ctx_,                                /* in */
-        color_converter_.output_texture().name(), /* in */
-        cuda_gfx_resource,                        /* out */
-        cuda_array);                              /* out */
-
-    SC_SCOPE_GUARD([&] {
-        CUcontext old_ctx;
-        cuda().cuCtxPushCurrent_v2(cuda_ctx_);
-        SC_SCOPE_GUARD([&] { cuda().cuCtxPopCurrent_v2(&old_ctx); });
-
-        if (cuda_gfx_resource) {
-            cuda().cuGraphicsUnmapResources(1, &cuda_gfx_resource, 0);
-            cuda().cuGraphicsUnregisterResource(cuda_gfx_resource);
-            cuda_gfx_resource = nullptr;
-        }
-    });
-
-    CUDA_MEMCPY2D memcpy_struct {};
-
-    memcpy_struct.srcXInBytes = 0;
-    memcpy_struct.srcY = 0;
-    memcpy_struct.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-    memcpy_struct.dstXInBytes = 0;
-    memcpy_struct.dstY = 0;
-    memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    memcpy_struct.srcArray = cuda_array;
-    memcpy_struct.dstDevice = reinterpret_cast<CUdeviceptr>(frame->data[0]);
-    memcpy_struct.dstPitch = frame->linesize[0];
-    memcpy_struct.WidthInBytes = frame->linesize[0];
-    memcpy_struct.Height = frame->height;
-
-    if (auto const cuda_result = cuda().cuMemcpy2D_v2(&memcpy_struct);
-        cuda_result != CUDA_SUCCESS) {
-        char const* err = "unknown";
-        cuda().cuGetErrorString(cuda_result, &err);
-        throw std::runtime_error {
-            std::to_string(frame_number_) +
-            std::string { " Failed to copy CUDA buffer: " } + err
-        };
-    }
-
+    copy_texture_to_frame(cuda_ctx_, color_converter_.output_texture(), frame);
     frame->pts = frame_number_++;
-
     completion(*this, frame, data);
 }
 
