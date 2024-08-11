@@ -26,7 +26,7 @@ struct PipewireCaptureSourceState
     StickyCancelEvent audio_buffer_event;
     std::size_t audio_buffer_high_watermark;
 
-    SampleFormat required_sample_format { SampleFormat::float_planar };
+    SampleFormat required_sample_format;
     std::size_t required_sample_rate { 48'000 };
     std::mutex audio_data_mutex {};
     std::atomic_bool cancelled { false };
@@ -40,15 +40,20 @@ struct PipewireCaptureSourceState
 
 auto transfer_samples(MediaChunk& buffer,
                       AVFrame& target,
-                      std::size_t samples) noexcept -> void;
+                      std::size_t samples,
+                      SampleFormat sample_format) noexcept -> void;
 
+auto prepare_buffer_channels(sc::MediaChunk& buffer,
+                             sc::SampleFormat sample_format,
+                             std::size_t num_channels = 2) -> void;
 } // namespace detail
 
 struct PipewireCaptureSource
 {
     explicit PipewireCaptureSource(exios::Context const&,
                                    Parameters const&,
-                                   std::size_t frame_size);
+                                   std::size_t frame_size,
+                                   SampleFormat sample_format);
 
     using CaptureResultType = exios::Result<AVFrame*, std::error_code>;
 
@@ -80,7 +85,8 @@ struct PipewireCaptureSource
                 detail::transfer_samples(
                     state.audio_data,
                     *frame,
-                    static_cast<std::size_t>(frame->nb_samples));
+                    static_cast<std::size_t>(frame->nb_samples),
+                    state.required_sample_format);
                 state.samples_written += frame->nb_samples;
             }
 

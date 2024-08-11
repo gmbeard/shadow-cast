@@ -7,17 +7,20 @@ namespace
 {
 
 constexpr int kDefaultAudioFrameSize = 1024;
-constexpr char kDefaultAudioEncoder[] = "aac";
+
+auto apply_audio_codec_modifiers(AVCodec const& codec, AVDictionary*& output)
+    -> void
+{
+    if (std::string_view { codec.name } == "libopus") {
+        av_dict_set_int(&output, "frame_duration", 40, 0);
+        av_dict_set_int(&output, "vbr", 0, 0);
+    }
+}
 
 auto create_encoder_context(sc::Parameters const& params) -> sc::CodecContextPtr
 {
-    /* FIXME:
-     *  Ensure we can support more audio encoders...
-     */
     sc::BorrowedPtr<AVCodec const> encoder { avcodec_find_encoder_by_name(
-        kDefaultAudioEncoder) };
-    // sc::BorrowedPtr<AVCodec const> encoder { avcodec_find_encoder_by_name(
-    //     params.audio_encoder.c_str()) };
+        params.audio_encoder.c_str()) };
     if (!encoder) {
         throw sc::CodecError { "Failed to find required audio codec" };
     }
@@ -48,8 +51,11 @@ auto create_encoder_context(sc::Parameters const& params) -> sc::CodecContextPtr
     audio_encoder_context->time_base = av_make_q(1, params.sample_rate);
     audio_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
+    AVDictionary* options = nullptr;
+    apply_audio_codec_modifiers(*encoder, options);
+
     if (auto const ret =
-            avcodec_open2(audio_encoder_context.get(), encoder.get(), nullptr);
+            avcodec_open2(audio_encoder_context.get(), encoder.get(), &options);
         ret < 0) {
         throw sc::CodecError { "Failed to open audio codec: " +
                                sc::av_error_to_string(ret) };
@@ -100,6 +106,11 @@ auto AudioEncoderSink::prepare() -> input_type
 
 auto AudioEncoderSink::frame_size() const noexcept -> std::size_t
 {
-    return encoder_context_->frame_size;
+    return encoder_context_->frame_size ? encoder_context_->frame_size
+                                        : kDefaultAudioFrameSize;
+}
+auto AudioEncoderSink::sample_format() const noexcept -> SampleFormat
+{
+    return convert_from_libav_format(encoder_context_->sample_fmt);
 }
 } // namespace sc

@@ -96,7 +96,8 @@ auto run_session(exios::Context const& execution_context,
     sc::AudioEncoderSink audio_sink { execution_context, *container, params };
     sc::PipewireCaptureSource audio_source { execution_context,
                                              params,
-                                             audio_sink.frame_size() };
+                                             audio_sink.frame_size(),
+                                             audio_sink.sample_format() };
 
     using SessionStateType = detail::SessionState<std::decay_t<decltype(alloc)>,
                                                   std::decay_t<Completion>>;

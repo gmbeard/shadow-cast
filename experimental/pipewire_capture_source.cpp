@@ -1,4 +1,5 @@
 #include "pipewire_capture_source.hpp"
+#include "av/sample_format.hpp"
 #include "logging.hpp"
 #include "utils/contracts.hpp"
 #include "utils/elapsed.hpp"
@@ -14,11 +15,14 @@ namespace sc
 
 PipewireCaptureSource::PipewireCaptureSource(exios::Context const& ctx,
                                              Parameters const& params,
-                                             std::size_t frame_size)
+                                             std::size_t frame_size,
+                                             SampleFormat sample_format)
     : context_ { ctx }
     , event_ { ctx, exios::semaphone_mode }
     , state_ { std::make_unique<detail::PipewireCaptureSourceState>(
-          StickyCancelEvent { ctx, exios::semaphone_mode }, frame_size) }
+          StickyCancelEvent { ctx, exios::semaphone_mode },
+          frame_size,
+          sample_format) }
 {
     state_->required_sample_rate = params.sample_rate;
 }
@@ -32,7 +36,12 @@ auto PipewireCaptureSource::context() const noexcept -> exios::Context const&
 {
     return context_;
 }
-auto PipewireCaptureSource::init() -> void { start_audio_stream(); }
+auto PipewireCaptureSource::init() -> void
+{
+    detail::prepare_buffer_channels(state_->audio_data,
+                                    state_->required_sample_format);
+    start_audio_stream();
+}
 auto PipewireCaptureSource::deinit() -> void { stop_audio_stream(); }
 
 auto PipewireCaptureSource::start_audio_stream() -> void
@@ -174,8 +183,6 @@ void PipewireCaptureSource::on_process(void* userdata)
         chunk.sample_count += num_samples;
 
         std::span channel_data { buf->datas, buf->n_datas };
-        while (chunk.channel_buffers().size() < channel_data.size())
-            chunk.channel_buffers().push_back(sc::DynamicBuffer {});
 
         auto out_buffer_it = chunk.channel_buffers().begin();
 
@@ -245,39 +252,57 @@ namespace detail
 {
 auto transfer_samples(MediaChunk& buffer,
                       AVFrame& target,
-                      std::size_t samples) noexcept -> void
+                      std::size_t samples,
+                      SampleFormat sample_format) noexcept -> void
 {
-    /* FIXME:
-     *  We're assuming planar sample data. Make sure we can handle
-     * interleaved too!
-     */
     SC_EXPECT(buffer.channel_buffers().size() > 0);
     SC_EXPECT(target.channels > 0);
-    SC_EXPECT(buffer.channel_buffers().size() ==
-              static_cast<std::size_t>(target.channels));
+    auto const is_planar = is_planar_format(sample_format);
 
-    /* FIXME:
-     *  We're only dealing with float-sized samples. Make sure we can
-     * handle other sample formats too!
-     */
-    auto const num_bytes = samples * sizeof(float);
+    SC_EXPECT(!is_planar || buffer.channel_buffers().size() ==
+                                static_cast<std::size_t>(target.channels));
 
-    std::span dest_channels { target.data,
-                              static_cast<std::size_t>(target.channels) };
+    std::size_t num_planes =
+        is_planar_format(sample_format) ? target.channels : 1;
+
+    auto const num_bytes = samples * sample_format_size(sample_format) *
+                           (is_planar ? 1 : target.channels);
+
+    std::span dest_channels { target.data, num_planes };
 
     auto out_it = dest_channels.begin();
 
-    std::for_each(buffer.channel_buffers().begin(),
-                  buffer.channel_buffers().end(),
-                  [&](auto& source_buffer) {
-                      SC_EXPECT(source_buffer.data().size() >= num_bytes);
-                      std::copy_n(
-                          source_buffer.data().begin(), num_bytes, *out_it++);
-                      source_buffer.consume(num_bytes);
-                  });
+    auto channels_begin = buffer.channel_buffers().begin();
+    auto channels_end = std::next(channels_begin, num_planes);
+
+    std::for_each(channels_begin, channels_end, [&](auto& source_buffer) {
+        SC_EXPECT(source_buffer.data().size() >= num_bytes);
+        std::copy_n(source_buffer.data().begin(), num_bytes, *out_it++);
+        source_buffer.consume(num_bytes);
+    });
 
     buffer.sample_count -= samples;
 }
+
+auto prepare_buffer_channels(sc::MediaChunk& buffer,
+                             sc::SampleFormat sample_format,
+                             std::size_t num_channels) -> void
+{
+    buffer.channel_buffers().clear();
+    buffer.channel_buffers().push_back(sc::DynamicBuffer {});
+
+    if (!sc::is_interleaved_format(sample_format)) {
+        while (num_channels != buffer.channel_buffers().size()) {
+            buffer.channel_buffers().push_back(sc::DynamicBuffer {});
+        }
+    }
+
+    SC_EXPECT(buffer.channel_buffers().size() ==
+                      sc::is_interleaved_format(sample_format)
+                  ? 1
+                  : num_channels);
+}
+
 } // namespace detail
 
 } // namespace sc

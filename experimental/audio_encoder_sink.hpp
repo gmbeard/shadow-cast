@@ -3,6 +3,7 @@
 
 #include "av/codec.hpp"
 #include "av/frame.hpp"
+#include "av/sample_format.hpp"
 #include "capture_sink.hpp"
 #include "exios/exios.hpp"
 #include "media_container.hpp"
@@ -54,6 +55,7 @@ struct AudioEncoderSink
     }
 
     auto frame_size() const noexcept -> std::size_t;
+    auto sample_format() const noexcept -> SampleFormat;
 
 private:
     exios::Context ctx_;
