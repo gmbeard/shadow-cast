@@ -1,13 +1,51 @@
 #include "./media_container.hpp"
-#include "av/frame.hpp"
 #include "error.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include "utils/contracts.hpp"
+#include "utils/scope_guard.hpp"
 #include <algorithm>
 #include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
 #include <libavutil/avutil.h>
 #include <span>
+
+namespace
+{
+auto encode_frame(AVFrame* frame,
+                  AVCodecContext* ctx,
+                  AVFormatContext* fmt,
+                  AVStream* stream,
+                  AVPacket* packet) -> void
+{
+    auto response = avcodec_send_frame(ctx, frame);
+    if (response < 0) {
+        throw std::runtime_error { "send frame error: " +
+                                   sc::av_error_to_string(response) };
+    }
+
+    while (response >= 0 || response == AVERROR(EAGAIN)) {
+        response = avcodec_receive_packet(ctx, packet);
+        if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
+            break;
+        }
+
+        if (response < 0) {
+            throw std::runtime_error { "receive packet error" };
+        }
+
+        SC_SCOPE_GUARD([&] { av_packet_unref(packet); });
+
+        packet->stream_index = stream->index;
+        av_packet_rescale_ts(packet, ctx->time_base, stream->time_base);
+
+        response = av_interleaved_write_frame(fmt, packet);
+        if (response < 0) {
+            throw std::runtime_error { "write packet error: " +
+                                       sc::av_error_to_string(response) };
+        }
+    }
+}
+} // namespace
 
 namespace sc
 {
@@ -65,7 +103,7 @@ auto MediaContainer::write_frame(AVFrame* frame, AVCodecContext* codec) -> void
     SC_EXPECT(stream_pos != streams.end());
 
     // cppcheck-suppress [derefInvalidIteratorRedundantCheck]
-    send_frame(frame, codec, ctx_.get(), *stream_pos, packet_.get());
+    encode_frame(frame, codec, ctx_.get(), *stream_pos, packet_.get());
 }
 
 auto MediaContainer::write_trailer() -> void
