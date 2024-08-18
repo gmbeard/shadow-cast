@@ -1,7 +1,9 @@
 #ifndef SHADOW_CAST_UTILS_POOL_HPP_INCLUDED
 #define SHADOW_CAST_UTILS_POOL_HPP_INCLUDED
 
+#include "utils/contracts.hpp"
 #include "utils/intrusive_list.hpp"
+#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -81,9 +83,11 @@ struct Pool
     using ItemPtr = std::unique_ptr<T, PoolItemDeleter>;
 
     explicit Pool(ObjectLifetime lifetime = ObjectLifetime {},
-                  Allocator alloc = Allocator {}) noexcept
+                  Allocator alloc = Allocator {},
+                  std::size_t max_pool_size = 1'024) noexcept
         : lifetime_ { lifetime }
         , alloc_ { alloc }
+        , max_pool_size_ { max_pool_size }
     {
     }
 
@@ -95,6 +99,17 @@ struct Pool
 
     ~Pool() { clear(); }
 
+    auto size() const noexcept -> std::size_t { return size_; }
+
+    auto requests() const noexcept -> std::size_t { return requests_; }
+
+    auto cached_requests() const noexcept -> std::size_t { return cached_; }
+
+    auto max_pool_size() const noexcept -> std::size_t
+    {
+        return max_pool_size_;
+    }
+
     /* Returns an item from the pool, or allocates
      * a new item if the pool is empty. The caller
      * must not delete any items returned by this
@@ -102,15 +117,15 @@ struct Pool
      */
     [[nodiscard]] auto get() -> ItemPtr
     {
+        requests_ += 1;
         {
             SynchronizationGuard guard { sync_ };
             if (!pool_list_.empty()) {
                 auto it = pool_list_.begin();
                 T* item = &*it;
                 static_cast<void>(pool_list_.erase(it));
-                if constexpr (PoolItem<T>) {
-                    item->reset();
-                }
+                size_ -= 1;
+                cached_ += 1;
                 return ItemPtr { item, *this };
             }
         }
@@ -121,6 +136,7 @@ struct Pool
         }
         catch (...) {
             deallocate_item(new_item);
+            requests_ -= 1;
             throw;
         }
 
@@ -133,14 +149,26 @@ struct Pool
      */
     auto put(T* item) noexcept -> void
     {
+        if constexpr (PoolItem<T>) {
+            item->reset();
+        }
         SynchronizationGuard guard { sync_ };
-        pool_list_.push_back(item);
+        if (size_ < max_pool_size_) {
+            pool_list_.push_back(item);
+            size_ += 1;
+        }
+        else {
+            lifetime_.destruct(item);
+            deallocate_item(item);
+        }
     }
 
     /* Pre-populates the pool with `n` items
      */
     auto fill(std::size_t n) -> void
     {
+        SC_EXPECT(n <= max_pool_size_);
+
         while (n--) {
             T* new_item = allocate_item();
             try {
@@ -151,7 +179,9 @@ struct Pool
                 throw;
             }
 
-            put(new_item);
+            SynchronizationGuard guard { sync_ };
+            pool_list_.push_back(new_item);
+            size_ += 1;
         }
     }
 
@@ -171,6 +201,7 @@ struct Pool
             lifetime_.destruct(item);
             deallocate_item(item);
         }
+        size_ = 0;
     }
 
 private:
@@ -192,8 +223,12 @@ private:
 
     ObjectLifetime lifetime_;
     Allocator alloc_;
+    std::size_t max_pool_size_;
     IntrusiveList<T> pool_list_;
     Synchronization sync_;
+    std::atomic_size_t size_ { 0 };
+    std::atomic_size_t requests_ { 0 };
+    std::atomic_size_t cached_ { 0 };
 };
 
 template <ListItem T,

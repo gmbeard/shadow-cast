@@ -55,6 +55,7 @@ struct SessionCompletion
             return;
         }
 
+        state->media_container->flush();
         state->media_container->write_trailer();
         auto completion = std::move(state->completion);
         auto error = std::move(state->error);

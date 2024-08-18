@@ -69,10 +69,10 @@ auto EncoderService::dispatch(Service& svc) -> void
     IntrusiveList<StreamPoll> tmp;
     {
         std::lock_guard lock { self.data_mutex_ };
-        tmp.splice(tmp.begin(),
-                   self.pending_,
-                   self.pending_.begin(),
-                   self.pending_.end());
+        static_cast<void>(tmp.splice(tmp.begin(),
+                                     self.pending_,
+                                     self.pending_.begin(),
+                                     self.pending_.end()));
     }
 
     ReturnToPoolGuard return_to_pool_guard { tmp, self.pool_ };
