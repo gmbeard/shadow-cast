@@ -10,6 +10,7 @@
 #include "io/signals.hpp"
 #include "logging.hpp"
 #include "metrics/formatting.hpp"
+#include "metrics/profiling.hpp"
 #include "nvenc_encoder_sink.hpp"
 #include "platform/egl.hpp"
 #include "platform/opengl.hpp"
@@ -73,6 +74,17 @@ auto app(sc::Parameters params) -> void
             sc::metrics::get_histogram(sc::metrics::cpu_metrics),
             "CPU %",
             "CPU usage / frame");
+#endif
+#ifdef SHADOW_CAST_ENABLE_PROFILING
+        auto const& profile_table = sc::metrics::get_profile_table();
+        std::for_each(
+            profile_table.begin(), profile_table.end(), [&](auto const& entry) {
+                auto const& [id, data] = entry;
+                std::cerr << sc::metrics::get_profile_section_name(id) << ": "
+                          << data.sample_count << ", " << data.highest_duration
+                          << ", " << data.lowest_duration << ", "
+                          << data.average_duration << '\n';
+            });
 #endif
     }
     catch (std::exception const& e) {

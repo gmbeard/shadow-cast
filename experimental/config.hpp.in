@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #cmakedefine SHADOW_CAST_ENABLE_HISTOGRAMS
+#cmakedefine SHADOW_CAST_ENABLE_PROFILING
 #cmakedefine SHADOW_CAST_USE_MEMORY_ARENAS
 
 namespace sc

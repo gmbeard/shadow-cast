@@ -5,11 +5,72 @@
 #include "io/accept_handler.hpp"
 #include "io/message_sender.hpp"
 #include "io/unix_socket.hpp"
+#include "metrics/profiling.hpp"
+#include "nvidia/cuda.hpp"
 #include "platform/egl.hpp"
 #include "services/color_converter.hpp"
 #include "utils/cmd_line.hpp"
 #include <GL/gl.h>
 #include <filesystem>
+
+namespace sc::cu
+{
+GraphicsResource::GraphicsResource(CUgraphicsResource value) noexcept
+    : value_ { value }
+{
+}
+
+GraphicsResource::GraphicsResource(GraphicsResource&& other) noexcept
+    : value_ { std::exchange(other.value_, nullptr) }
+{
+}
+
+GraphicsResource::~GraphicsResource()
+{
+    if (value_) {
+        cuda().cuGraphicsUnregisterResource(value_);
+    }
+}
+
+auto GraphicsResource::operator=(GraphicsResource&& other) noexcept
+    -> GraphicsResource&
+{
+    using std::swap;
+    auto tmp { std::move(other) };
+
+    swap(value_, tmp.value_);
+    return *this;
+}
+
+GraphicsResource::operator bool() const noexcept { return value_ != nullptr; }
+
+GraphicsResource::operator CUgraphicsResource() const noexcept
+{
+    return value_;
+}
+
+auto graphics_gl_register_image(unsigned int texture_name,
+                                unsigned int texture_target,
+                                unsigned int flags) -> GraphicsResource
+{
+    using namespace std::string_literals;
+
+    char const* err_str = "unknown";
+    CUgraphicsResource resource;
+
+    if (auto const r = cuda().cuGraphicsGLRegisterImage(
+            &resource, texture_name, texture_target, flags);
+        r != CUDA_SUCCESS) {
+        cuda().cuGetErrorString(r, &err_str);
+        throw std::runtime_error {
+            "CUDA: Failed to register image with CUDA - "s + err_str
+        };
+    }
+
+    return GraphicsResource { resource };
+}
+
+} // namespace sc::cu
 
 namespace
 {
@@ -51,56 +112,6 @@ auto get_drm_data(sc::UnixSocket& socket, std::size_t timeout, sigset_t* mask)
     return sc::result_ok(response);
 }
 
-auto register_gl_texture_in_cuda(CUcontext ctx,
-                                 GLuint texture_name,
-                                 CUgraphicsResource& cuda_gfx_resource,
-                                 CUarray& cuda_array) -> void
-{
-    using namespace std::literals::string_literals;
-
-    char const* err_str = "unknown";
-
-    CUcontext old_ctx;
-    /*CUresult res = */ sc::cuda().cuCtxPushCurrent_v2(ctx);
-    SC_SCOPE_GUARD([&] { sc::cuda().cuCtxPopCurrent_v2(&old_ctx); });
-
-    if (auto const r = sc::cuda().cuGraphicsGLRegisterImage(
-            &cuda_gfx_resource,
-            texture_name,
-            GL_TEXTURE_2D,
-            CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY);
-        r != CUDA_SUCCESS) {
-        sc::cuda().cuGetErrorString(r, &err_str);
-        throw std::runtime_error {
-            "CUDA: Failed to register image with CUDA - "s + err_str
-        };
-    }
-
-    if (auto const r = sc::cuda().cuGraphicsResourceSetMapFlags(
-            cuda_gfx_resource, CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
-        r != CUDA_SUCCESS) {
-        sc::cuda().cuGetErrorString(r, &err_str);
-        throw std::runtime_error { "CUDA: Failed to set map flags - "s +
-                                   err_str };
-    }
-
-    if (auto const r =
-            sc::cuda().cuGraphicsMapResources(1, &cuda_gfx_resource, 0);
-        r != CUDA_SUCCESS) {
-        sc::cuda().cuGetErrorString(r, &err_str);
-        throw std::runtime_error { "CUDA: cuGraphicsMapResources failed - "s +
-                                   err_str };
-    }
-
-    if (auto const r = sc::cuda().cuGraphicsSubResourceGetMappedArray(
-            &cuda_array, cuda_gfx_resource, 0, 0);
-        r != CUDA_SUCCESS) {
-        sc::cuda().cuGetErrorString(r, &err_str);
-        throw std::runtime_error {
-            "CUDA: cuGraphicsSubResourceGetMappedArray dailed - "s + err_str
-        };
-    }
-}
 auto find_drm_helper_binary()
 {
     using namespace std::string_literals;
@@ -118,52 +129,42 @@ auto find_drm_helper_binary()
 
     return kms_bin_path;
 }
+
 auto copy_texture_to_frame(CUcontext cuda_context,
-                           sc::opengl::Texture const& texture,
+                           sc::cu::GraphicsResource& cuda_gfx_resource,
                            AVFrame* frame) -> void
 {
-    CUgraphicsResource cuda_gfx_resource { nullptr };
-    CUarray cuda_array { nullptr };
+    sc::cu::with_cuda_context(cuda_context, [&] {
+        sc::cu::graphics_map_resource_array(
+            cuda_gfx_resource,
+            CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY,
+            [&](auto cuda_array) {
+                CUDA_MEMCPY2D memcpy_struct {};
 
-    register_gl_texture_in_cuda(cuda_context,      /* in */
-                                texture.name(),    /* in */
-                                cuda_gfx_resource, /* out */
-                                cuda_array);       /* out */
+                memcpy_struct.srcXInBytes = 0;
+                memcpy_struct.srcY = 0;
+                memcpy_struct.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+                memcpy_struct.dstXInBytes = 0;
+                memcpy_struct.dstY = 0;
+                memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+                memcpy_struct.srcArray = cuda_array;
+                memcpy_struct.dstDevice =
+                    reinterpret_cast<CUdeviceptr>(frame->data[0]);
+                memcpy_struct.dstPitch = frame->linesize[0];
+                memcpy_struct.WidthInBytes = frame->linesize[0];
+                memcpy_struct.Height = frame->height;
 
-    SC_SCOPE_GUARD([&] {
-        CUcontext old_ctx;
-        sc::cuda().cuCtxPushCurrent_v2(cuda_context);
-        SC_SCOPE_GUARD([&] { sc::cuda().cuCtxPopCurrent_v2(&old_ctx); });
-
-        if (cuda_gfx_resource) {
-            sc::cuda().cuGraphicsUnmapResources(1, &cuda_gfx_resource, 0);
-            sc::cuda().cuGraphicsUnregisterResource(cuda_gfx_resource);
-            cuda_gfx_resource = nullptr;
-        }
+                if (auto const cuda_result =
+                        sc::cuda().cuMemcpy2D_v2(&memcpy_struct);
+                    cuda_result != CUDA_SUCCESS) {
+                    char const* err = "unknown";
+                    sc::cuda().cuGetErrorString(cuda_result, &err);
+                    throw std::runtime_error {
+                        std::string { " Failed to copy CUDA buffer: " } + err
+                    };
+                }
+            });
     });
-
-    CUDA_MEMCPY2D memcpy_struct {};
-
-    memcpy_struct.srcXInBytes = 0;
-    memcpy_struct.srcY = 0;
-    memcpy_struct.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-    memcpy_struct.dstXInBytes = 0;
-    memcpy_struct.dstY = 0;
-    memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    memcpy_struct.srcArray = cuda_array;
-    memcpy_struct.dstDevice = reinterpret_cast<CUdeviceptr>(frame->data[0]);
-    memcpy_struct.dstPitch = frame->linesize[0];
-    memcpy_struct.WidthInBytes = frame->linesize[0];
-    memcpy_struct.Height = frame->height;
-
-    if (auto const cuda_result = sc::cuda().cuMemcpy2D_v2(&memcpy_struct);
-        cuda_result != CUDA_SUCCESS) {
-        char const* err = "unknown";
-        sc::cuda().cuGetErrorString(cuda_result, &err);
-        throw std::runtime_error {
-            std::string { " Failed to copy CUDA buffer: " } + err
-        };
-    }
 }
 } // namespace
 
@@ -175,12 +176,14 @@ DRMCudaCaptureSource::DRMCudaCaptureSource(exios::Context context,
                                            VideoOutputSize output_size,
                                            VideoOutputScale output_scale,
                                            CUcontext cuda_ctx,
-                                           EGLDisplay egl_display) noexcept
+                                           EGLDisplay egl_display,
+                                           EGLSurface egl_surface) noexcept
     : ctx_ { context }
     , timer_ { context }
     , frame_interval_ { params.frame_time.value() }
     , cuda_ctx_ { cuda_ctx }
     , egl_display_ { std::move(egl_display) }
+    , egl_surface_ { std::move(egl_surface) }
     , color_converter_ { output_size.width,
                          output_size.height,
                          output_scale.width,
@@ -214,6 +217,13 @@ auto DRMCudaCaptureSource::init() -> void
     sigaddset(&drm_proc_mask_, SIGCHLD);
 
     color_converter_.initialize();
+
+    cu::with_cuda_context(cuda_ctx_, [&] {
+        cuda_gfx_resource_ = cu::graphics_gl_register_image(
+            color_converter_.output_texture().name(),
+            GL_TEXTURE_2D,
+            CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY);
+    });
 
     auto server_socket = sc::socket::bind(kSocketPath);
 
@@ -264,7 +274,10 @@ auto DRMCudaCaptureSource::capture_(
      */
 
     auto const r =
-        get_drm_data(drm_socket_, kDRMDataTimeoutMs, &drm_proc_mask_);
+        WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
+            return get_drm_data(
+                drm_socket_, kDRMDataTimeoutMs, &drm_proc_mask_);
+        });
 
     if (!r) {
         if (sc::get_error(r).value() == EINTR)
@@ -384,8 +397,12 @@ auto DRMCudaCaptureSource::capture_(
                                          .y = mouse_descriptor.y };
     }
 
-    color_converter_.convert(mouse_params);
-    copy_texture_to_frame(cuda_ctx_, color_converter_.output_texture(), frame);
+    WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion,
+                 [&] { color_converter_.convert(mouse_params); });
+    egl().eglSwapBuffers(egl_display_, egl_surface_);
+    WITH_PROFILE(metrics::ProfileSectionId::cuda_copy_frame, [&] {
+        copy_texture_to_frame(cuda_ctx_, cuda_gfx_resource_, frame);
+    });
     frame->pts = frame_number_++;
     completion(*this, frame, data);
 }

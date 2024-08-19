@@ -45,6 +45,7 @@ add_library(shadow-cast-obj
     platform/wayland.cpp
 
     metrics/metrics.cpp
+    metrics/profiling.cpp
 
     services/audio_service.cpp
     services/color_converter.cpp

@@ -1,4 +1,5 @@
 #include "./shadow_cast.hpp"
+#include "metrics/profiling.hpp"
 #include "utils/contracts.hpp"
 #include "utils/frame_time.hpp"
 
@@ -619,6 +620,18 @@ auto main(int argc, char const** argv) -> int
         sc::metrics::get_histogram(sc::metrics::video_metrics),
         "Frame time (ns)",
         "Video Frame Times");
+#endif
+
+#ifdef SHADOW_CAST_ENABLE_PROFILING
+    auto const& profile_table = sc::metrics::get_profile_table();
+    std::for_each(
+        profile_table.begin(), profile_table.end(), [&](auto const& entry) {
+            auto const& [id, data] = entry;
+            std::cerr << sc::metrics::get_profile_section_name(id) << ": "
+                      << data.sample_count << ", " << data.highest_duration
+                      << ", " << data.lowest_duration << ", "
+                      << data.average_duration << '\n';
+        });
 #endif
 
     return 0;

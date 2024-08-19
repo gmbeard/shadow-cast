@@ -94,6 +94,12 @@ option(
 )
 
 option(
+    SHADOW_CAST_ENABLE_PROFILING
+    "Enable profiling metrics for ${PROJECT_NAME}"
+    OFF
+)
+
+option(
     SHADOW_CAST_ENABLE_EXPERIMENTAL
     "Enable experimental build for ${PROJECT_NAME}"
     OFF

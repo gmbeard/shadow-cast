@@ -34,9 +34,10 @@ auto create_video_capture(exios::Context const& execution_context,
             }
 
             sc::DRMCudaCaptureSource video_source {
-                execution_context,  params,
-                dimensions,         scale,
-                gpu.cuda_context(), desktop.egl_display()
+                execution_context,    params,
+                dimensions,           scale,
+                gpu.cuda_context(),   desktop.egl_display(),
+                desktop.egl_surface()
             };
             sc::NvencEncoderSink video_sink {
                 execution_context, gpu.cuda_context(),

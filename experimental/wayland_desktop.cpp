@@ -240,6 +240,11 @@ auto WaylandDesktop::egl_display() const noexcept -> EGLDisplay
     return egl_.display;
 }
 
+auto WaylandDesktop::egl_surface() const noexcept -> EGLSurface
+{
+    return egl_.surface;
+}
+
 WaylandDesktop::operator bool() const noexcept { return initialized_; }
 
 namespace detail

@@ -120,6 +120,7 @@ struct WaylandDesktop
     operator bool() const noexcept;
     auto size() const noexcept -> VideoOutputSize const&;
     auto egl_display() const noexcept -> EGLDisplay;
+    auto egl_surface() const noexcept -> EGLSurface;
     auto gpu_vendor() const noexcept -> std::string_view;
     auto gpu_id() const noexcept -> std::string_view;
 
