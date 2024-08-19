@@ -1,5 +1,6 @@
 #include "drm_cuda_capture_source.hpp"
 #include "av/codec.hpp"
+#include "color_converter.hpp"
 #include "cuda.hpp"
 #include "drm/messaging.hpp"
 #include "io/accept_handler.hpp"
@@ -8,7 +9,6 @@
 #include "metrics/profiling.hpp"
 #include "nvidia/cuda.hpp"
 #include "platform/egl.hpp"
-#include "services/color_converter.hpp"
 #include "utils/cmd_line.hpp"
 #include <GL/gl.h>
 #include <filesystem>

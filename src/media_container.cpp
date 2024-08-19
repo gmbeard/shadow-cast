@@ -1,15 +1,10 @@
 #include "./media_container.hpp"
 #include "error.hpp"
-#include "logging.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include "utils/contracts.hpp"
 #include "utils/scope_guard.hpp"
 #include <algorithm>
 #include <functional>
-#include <libavcodec/avcodec.h>
-#include <libavcodec/packet.h>
-#include <libavutil/avutil.h>
-#include <mutex>
 #include <span>
 
 namespace sc
@@ -18,7 +13,7 @@ namespace sc
 MediaContainer::MediaContainer(std::filesystem::path const& output_file)
     : ctx_ {}
     , open_ { false }
-    , queue_processing_thread_ { &MediaContainer::queue_processing_thread_,
+    , queue_processing_thread_ { &MediaContainer::queue_processor_,
                                  std::ref(*this) }
 {
     AVFormatContext* fc_tmp;
@@ -71,8 +66,6 @@ auto MediaContainer::write_frame(AVFrame* frame, AVCodecContext* codec) -> void
 
     SC_EXPECT(stream_pos != streams.end());
 
-    auto packet = packet_pool_.get();
-
     // cppcheck-suppress [derefInvalidIteratorRedundantCheck]
     encode_frame(frame, codec, *stream_pos);
 }
@@ -121,7 +114,7 @@ auto MediaContainer::encode_frame(AVFrame* frame,
     }
 
     while (response >= 0 || response == AVERROR(EAGAIN)) {
-        auto pool_item = packet_pool_.get();
+        auto pool_item = output_queue_.prepare();
         response = avcodec_receive_packet(ctx, pool_item->packet);
         if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
             break;
@@ -135,27 +128,13 @@ auto MediaContainer::encode_frame(AVFrame* frame,
         av_packet_rescale_ts(
             pool_item->packet, ctx->time_base, stream->time_base);
 
-        /* FIX:
-         * It's probably not a good idea to allow the output queue to just grow
-         * to any size; Encoding could potentially be faster than writing the
-         * output media, so we'd just end up consuming an unbound amount of
-         * memory. Maybe a better implementation would be to allow _some_
-         * packets to be queued but after a high watermark we should block until
-         * the output queue size reduces...
-         */
-        {
-            std::unique_lock lock { queue_mutex_ };
-            output_queue_.push_back(pool_item.release());
-        }
-
-        queue_item_ready_.notify_one();
+        output_queue_.enqueue(pool_item.release());
     }
 }
 
 auto MediaContainer::flush() -> void
 {
     queue_processor_running_ = 0;
-    queue_item_ready_.notify_one();
     if (queue_processing_thread_.joinable()) {
         queue_processing_thread_.join();
     }
@@ -165,68 +144,33 @@ auto MediaContainer::flush() -> void
     }
 
     while (!output_queue_.empty()) {
-        auto& packet = output_queue_.front();
-        output_queue_.pop_front();
-        SC_SCOPE_GUARD([&] { packet_pool_.put(&packet); });
+        auto* queue_item = output_queue_.dequeue();
+        SC_SCOPE_GUARD([&] { output_queue_.commit(queue_item); });
 
         auto const response =
-            av_interleaved_write_frame(ctx_.get(), packet.packet);
+            av_interleaved_write_frame(ctx_.get(), queue_item->packet);
 
         if (response < 0) {
             throw std::runtime_error { "write packet error: " +
                                        sc::av_error_to_string(response) };
         }
     }
-
-    log(LogLevel::debug, "Packet pool size: %llu", packet_pool_.size());
-    log(LogLevel::debug,
-        "Packet pool requests: %llu. Cached %llu",
-        packet_pool_.requests(),
-        packet_pool_.cached_requests());
 }
 
 auto MediaContainer::queue_processor_(MediaContainer& self) -> void
 {
     while (self.queue_processor_running_) {
-        std::unique_lock lock { self.queue_mutex_ };
 
-        if (self.output_queue_.empty()) {
-            self.queue_item_ready_.wait(lock, [&] {
-                return !self.output_queue_.empty() ||
-                       self.queue_processor_running_ == 0;
-            });
-        }
-
-        if (!self.queue_processor_running_)
-            break;
-
-        auto& packet = self.output_queue_.front();
-        self.output_queue_.pop_front();
-        lock.unlock();
-
-        SC_SCOPE_GUARD([&] { self.packet_pool_.put(&packet); });
+        auto* queue_item = self.output_queue_.dequeue();
+        SC_SCOPE_GUARD([&] { self.output_queue_.commit(queue_item); });
 
         auto const response =
-            av_interleaved_write_frame(self.ctx_.get(), packet.packet);
+            av_interleaved_write_frame(self.ctx_.get(), queue_item->packet);
 
         if (response < 0) {
             throw std::runtime_error { "write packet error: " +
                                        sc::av_error_to_string(response) };
         }
     }
-}
-
-auto PacketPoolItem::reset() noexcept -> void { av_packet_unref(packet); }
-
-auto PacketPoolLifetime::construct(PacketPoolItem* ptr) -> void
-{
-    new (static_cast<void*>(ptr)) PacketPoolItem {};
-    ptr->packet = av_packet_alloc();
-}
-
-auto PacketPoolLifetime::destruct(PacketPoolItem* ptr) -> void
-{
-    av_packet_free(&ptr->packet);
-    ptr->~PacketPoolItem();
 }
 } // namespace sc

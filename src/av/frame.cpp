@@ -1,7 +1,7 @@
 #include "av/frame.hpp"
+#include "av/fwd.hpp"
 #include "av/packet.hpp"
 #include "error.hpp"
-#include <libavutil/avutil.h>
 #include <mutex>
 #include <stdexcept>
 

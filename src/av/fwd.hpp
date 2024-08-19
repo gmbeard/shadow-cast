@@ -8,7 +8,6 @@ extern "C" {
 #include <libavutil/buffer.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
-// #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
 }

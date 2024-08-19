@@ -1,6 +1,5 @@
 #include "./nvfbc_capture_source.hpp"
 #include "nvfbc.hpp"
-#include "nvfbc_gpu.hpp"
 #include "nvidia.hpp"
 #include "sticky_cancel_timer.hpp"
 #include "utils/cmd_line.hpp"

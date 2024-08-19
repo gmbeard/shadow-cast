@@ -100,12 +100,6 @@ option(
 )
 
 option(
-    SHADOW_CAST_ENABLE_EXPERIMENTAL
-    "Enable experimental build for ${PROJECT_NAME}"
-    OFF
-)
-
-option(
     SHADOW_CAST_USE_MEMORY_ARENAS
     "Enable memory arena allocation strategy"
     ON
@@ -122,16 +116,10 @@ if (SHADOW_CAST_ENABLE_TSAN)
 endif()
 
 add_subdirectory(src)
-if(SHADOW_CAST_ENABLE_EXPERIMENTAL)
-    add_subdirectory(experimental)
-endif()
 
 if(SHADOW_CAST_ENABLE_TESTS)
     enable_testing()
     add_subdirectory(tests)
-    if(SHADOW_CAST_ENABLE_EXPERIMENTAL)
-        add_subdirectory(experimental_tests)
-    endif()
 endif()
 
 configure_file(
@@ -144,14 +132,7 @@ configure_file(
     @ONLY
 )
 
-if(NOT SHADOW_CAST_ENABLE_EXPERIMENTAL)
-    install(
-        TARGETS shadow-cast shadow-cast-kms
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
-else()
-    install(
-        TARGETS shadowcast shadow-cast-kms
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
-endif()
+install(
+    TARGETS shadowcast shadow-cast-kms
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)

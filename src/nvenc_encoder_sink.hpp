@@ -7,8 +7,10 @@
 #include "exios/exios.hpp"
 #include "media_container.hpp"
 #include "utils/cmd_line.hpp"
+extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/frame.h>
+}
 
 namespace sc
 {

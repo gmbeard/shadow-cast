@@ -9,7 +9,6 @@
 #include "utils/cmd_line.hpp"
 #include "utils/frame_time.hpp"
 #include "video_capture_loop_operation.hpp"
-#include <libavcodec/codec.h>
 #include <utility>
 
 namespace sc

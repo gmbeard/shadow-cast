@@ -1,7 +1,6 @@
 #include "audio_encoder_sink.hpp"
 #include "av/sample_format.hpp"
 #include "utils/cmd_line.hpp"
-#include <libavutil/frame.h>
 
 namespace
 {

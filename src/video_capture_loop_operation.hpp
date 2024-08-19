@@ -12,7 +12,9 @@
 #include <cinttypes>
 #include <cmath>
 #include <functional>
+extern "C" {
 #include <libavcodec/avcodec.h>
+}
 #include <system_error>
 
 namespace sc

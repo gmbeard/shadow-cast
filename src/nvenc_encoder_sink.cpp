@@ -5,11 +5,13 @@
 #include "logging.hpp"
 #include "utils/cmd_line.hpp"
 #include <cstdint>
+extern "C" {
 #include <libavcodec/codec.h>
 #include <libavutil/dict.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
+}
 
 namespace
 {

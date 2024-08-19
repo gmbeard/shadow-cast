@@ -8,7 +8,6 @@
 #include "sticky_cancel_event.hpp"
 #include "utils/cmd_line.hpp"
 #include "utils/contracts.hpp"
-#include <libavutil/frame.h>
 #include <memory>
 #include <mutex>
 #include <pipewire/pipewire.h>

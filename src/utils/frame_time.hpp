@@ -1,8 +1,8 @@
 #ifndef SHADOW_CAST_UTILS_FRAME_TIME_HPP_INCLUDED
 #define SHADOW_CAST_UTILS_FRAME_TIME_HPP_INCLUDED
 
+#include "av/fwd.hpp"
 #include <cstdint>
-#include <libavutil/rational.h>
 
 namespace sc
 {

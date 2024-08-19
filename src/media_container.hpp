@@ -2,30 +2,16 @@
 #define SHADOW_CAST_MEDIA_CONTAINER_HPP_INCLUDED
 
 #include "av/format.hpp"
-#include "av/packet.hpp"
-#include "utils/intrusive_list.hpp"
-#include "utils/pool.hpp"
+#include "packet_queue.hpp"
 #include <atomic>
-#include <condition_variable>
 #include <filesystem>
+extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
-#include <mutex>
+}
 
 namespace sc
 {
-
-struct PacketPoolItem : ListItemBase
-{
-    AVPacket* packet;
-    auto reset() noexcept -> void;
-};
-
-struct PacketPoolLifetime
-{
-    auto construct(PacketPoolItem* ptr) -> void;
-    auto destruct(PacketPoolItem* ptr) -> void;
-};
 
 struct MediaContainer
 {
@@ -48,12 +34,9 @@ private:
     FormatContextPtr ctx_;
     bool open_;
     std::size_t stream_count_ { 0 };
-    SynchronizedPool<PacketPoolItem, PacketPoolLifetime> packet_pool_;
-    IntrusiveList<PacketPoolItem> output_queue_;
-    std::mutex queue_mutex_;
-    std::condition_variable queue_item_ready_;
-    std::thread queue_processing_thread_;
+    PacketQueue output_queue_ {};
     std::atomic_uint8_t queue_processor_running_ { 1 };
+    std::thread queue_processing_thread_;
 };
 } // namespace sc
 

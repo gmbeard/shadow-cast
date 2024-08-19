@@ -3,9 +3,9 @@
 #include "error.hpp"
 #include "nvidia.hpp"
 #include <X11/Xlib.h>
-#include <libavutil/rational.h>
 extern "C" {
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/rational.h>
 }
 
 namespace sc

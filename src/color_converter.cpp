@@ -1,4 +1,4 @@
-#include "services/color_converter.hpp"
+#include "color_converter.hpp"
 #include "gl/core.hpp"
 #include "gl/program.hpp"
 #include "gl/texture.hpp"

@@ -42,7 +42,7 @@ auto create_video_capture(exios::Context const& execution_context,
             sc::NvencEncoderSink video_sink {
                 execution_context, gpu.cuda_context(),
                 container,         params,
-                desktop.size(),    NvencEncoderSink::PixelFormat::rgba
+                desktop.size(),    NvencEncoderSink::PixelFormat::bgra
             };
 
             return Capture { std::move(video_source),

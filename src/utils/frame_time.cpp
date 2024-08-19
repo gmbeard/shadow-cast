@@ -1,5 +1,4 @@
 #include "utils/frame_time.hpp"
-#include <libavutil/rational.h>
 
 namespace
 {

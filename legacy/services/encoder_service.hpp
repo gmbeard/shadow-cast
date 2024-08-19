@@ -1,8 +1,6 @@
 #ifndef SHADOW_CAST_SERVICES_MEDIA_WRITER_SERVICE_HPP_INCLUDED
 #define SHADOW_CAST_SERVICES_MEDIA_WRITER_SERVICE_HPP_INCLUDED
 
-#include "config.hpp"
-
 #include "av/frame.hpp"
 #include "av/packet.hpp"
 #include "services/readiness.hpp"
