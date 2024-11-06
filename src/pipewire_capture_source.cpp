@@ -255,9 +255,10 @@ auto transfer_samples(MediaChunk& buffer,
                       std::size_t samples,
                       SampleFormat sample_format) noexcept -> void
 {
-    SC_EXPECT(buffer.channel_buffers().size() > 0);
-    SC_EXPECT(target.channels > 0);
     auto const is_planar = is_planar_format(sample_format);
+    SC_EXPECT(buffer.channel_buffers().size() > 0);
+#if LIBAVCODEC_VERSION_MAJOR < 60
+    SC_EXPECT(target.channels > 0);
 
     SC_EXPECT(!is_planar || buffer.channel_buffers().size() ==
                                 static_cast<std::size_t>(target.channels));
@@ -267,6 +268,21 @@ auto transfer_samples(MediaChunk& buffer,
 
     auto const num_bytes = samples * sample_format_size(sample_format) *
                            (is_planar ? 1 : target.channels);
+
+#else
+    SC_EXPECT(target.ch_layout.nb_channels > 0);
+
+    SC_EXPECT(!is_planar ||
+              buffer.channel_buffers().size() ==
+                  static_cast<std::size_t>(target.ch_layout.nb_channels));
+
+    std::size_t num_planes =
+        is_planar_format(sample_format) ? target.ch_layout.nb_channels : 1;
+
+    auto const num_bytes = samples * sample_format_size(sample_format) *
+                           (is_planar ? 1 : target.ch_layout.nb_channels);
+
+#endif
 
     std::span dest_channels { target.data, num_planes };
 

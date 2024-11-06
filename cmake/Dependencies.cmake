@@ -4,7 +4,7 @@ set(SHADOW_CAST_EXIOS_VERSION "0.2.0")
 if(SHADOW_CAST_USE_LOCAL_DEPENDENCIES)
     FetchContent_Declare(
         Exios
-        SOURCE_DIR "${PROJECT_SOURCE_DIR}/deps/exios-${SHADOW_CAST_EXIOS_VERSION}"
+        SOURCE_DIR "${PROJECT_SOURCE_DIR}/deps/exios"
         OVERRIDE_FIND_PACKAGE
     )
 else()

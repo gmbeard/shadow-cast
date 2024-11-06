@@ -83,7 +83,7 @@ AudioEncoderSink::AudioEncoderSink(exios::Context ctx,
     frame_->channel_layout = encoder_context_->channel_layout;
     frame_->channels = encoder_context_->channels;
 #else
-    av_channel_layout_copy(&frame->ch_layout, &codec_context_->ch_layout);
+    av_channel_layout_copy(&frame_->ch_layout, &encoder_context_->ch_layout);
 #endif
     frame_->sample_rate = encoder_context_->sample_rate;
 
