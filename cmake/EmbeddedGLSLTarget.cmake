@@ -48,6 +48,8 @@ function(add_embedded_glsl_target)
             -o "${CMAKE_CURRENT_BINARY_DIR}/${ADD_EMBEDDED_GLSL_TARGET_NAME}.o"
             ${ADD_EMBEDDED_GLSL_TARGET_SOURCES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        # BYPRODUCTS is needed by Ninja...
+        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/${ADD_EMBEDDED_GLSL_TARGET_NAME}.o"
     )
     add_library(${ADD_EMBEDDED_GLSL_TARGET_NAME} OBJECT IMPORTED GLOBAL)
     set_target_properties(

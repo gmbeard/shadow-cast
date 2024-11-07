@@ -120,6 +120,12 @@ auto main(int argc, char const** argv) -> int
     }
     else {
         PipewireInit pw { argc, const_cast<char**>(argv) };
-        app(std::move(params.value()));
+        try {
+            app(std::move(params.value()));
+        }
+        catch (std::exception const& e) {
+            sc::log(sc::LogLevel::error, "%s", e.what());
+            return 1;
+        }
     }
 }

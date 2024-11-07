@@ -17,4 +17,4 @@ cmake \
 
 setcap \
     cap_sys_admin+ep \
-    "${install_prefix}/bin/${kms_bin_name}"
+    "${install_prefix}/libexec/${kms_bin_name}"

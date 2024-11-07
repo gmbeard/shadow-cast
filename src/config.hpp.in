@@ -19,6 +19,7 @@ enum struct ByteOrder
 [[maybe_unused]] auto constexpr kShadowCastProg = "@PROJECT_NAME@";
 [[maybe_unused]] auto constexpr kShadowCastVersion = "@PROJECT_VERSION@";
 [[maybe_unused]] auto constexpr kNvFBCKey = "@NVFBC_KEY@";
+[[maybe_unused]] auto constexpr KLibExecDir = "@CMAKE_INSTALL_FULL_LIBEXECDIR@";
 #ifdef SHADOW_CAST_USE_MEMORY_ARENAS
 [[maybe_unused]] std::size_t constexpr kNumberOfMemoryArenas = 2;
 [[maybe_unused]] std::size_t constexpr kMemoryArenaByteCapacity = 1024;

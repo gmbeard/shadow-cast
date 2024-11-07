@@ -1,11 +1,13 @@
 #include "drm_cuda_capture_source.hpp"
 #include "av/codec.hpp"
 #include "color_converter.hpp"
+#include "config.hpp"
 #include "cuda.hpp"
 #include "drm/messaging.hpp"
 #include "io/accept_handler.hpp"
 #include "io/message_sender.hpp"
 #include "io/unix_socket.hpp"
+#include "logging.hpp"
 #include "metrics/profiling.hpp"
 #include "nvidia/cuda.hpp"
 #include "platform/egl.hpp"
@@ -122,12 +124,33 @@ auto find_drm_helper_binary()
      */
     auto kms_bin_dir = fs::read_symlink("/proc/self/exe");
     kms_bin_dir.remove_filename();
-    auto const kms_bin_path = kms_bin_dir / kDRMBin;
-    if (!fs::exists(kms_bin_path))
-        throw new std::runtime_error { "Couldn't locate DRM helper at "s +
-                                       kms_bin_path.string() };
+    auto kms_bin_path = kms_bin_dir / kDRMBin;
+    sc::log(sc::LogLevel::debug,
+            "Checking for %s at %s",
+            kDRMBin,
+            kms_bin_path.c_str());
+    if (fs::exists(kms_bin_path)) {
+        sc::log(sc::LogLevel::debug,
+                "Found %s at %s",
+                kDRMBin,
+                kms_bin_path.c_str());
+        return kms_bin_path;
+    }
 
-    return kms_bin_path;
+    kms_bin_path = fs::path(sc::KLibExecDir) / kDRMBin;
+    sc::log(sc::LogLevel::debug,
+            "Checking for %s at %s",
+            kDRMBin,
+            kms_bin_path.c_str());
+    if (fs::exists(kms_bin_path)) {
+        sc::log(sc::LogLevel::debug,
+                "Found %s at %s",
+                kDRMBin,
+                kms_bin_path.c_str());
+        return kms_bin_path;
+    }
+
+    throw new std::runtime_error { "Couldn't locate DRM helper" };
 }
 
 auto copy_texture_to_frame(CUcontext cuda_context,

@@ -133,6 +133,11 @@ configure_file(
 )
 
 install(
-    TARGETS shadowcast shadow-cast-kms
+    TARGETS shadowcast
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(
+    TARGETS shadow-cast-kms
+    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}
 )

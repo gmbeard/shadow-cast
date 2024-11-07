@@ -6,6 +6,7 @@ if(SHADOW_CAST_USE_LOCAL_DEPENDENCIES)
         Exios
         SOURCE_DIR "${PROJECT_SOURCE_DIR}/deps/exios"
         OVERRIDE_FIND_PACKAGE
+        EXCLUDE_FROM_ALL
     )
 else()
     FetchContent_Declare(
@@ -13,5 +14,6 @@ else()
         GIT_REPOSITORY https://github.com/gmbeard/exios.git
         GIT_TAG ${SHADOW_CAST_EXIOS_VERSION}
         OVERRIDE_FIND_PACKAGE
+        EXCLUDE_FROM_ALL
     )
 endif()
