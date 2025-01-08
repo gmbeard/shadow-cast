@@ -39,7 +39,12 @@ MediaContainer::MediaContainer(std::filesystem::path const& output_file)
 MediaContainer::~MediaContainer()
 {
     if (open_) {
-        flush();
+        try {
+            flush();
+        }
+        catch (...) {
+            SC_EXPECT(false);
+        }
 
         SC_EXPECT(ctx_);
         // cppcheck-suppress [nullPointerRedundantCheck]
