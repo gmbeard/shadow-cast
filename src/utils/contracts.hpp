@@ -6,8 +6,13 @@
 #define SC_STRINGIFY_IMPL(s) #s
 #define SC_STRINGIFY(s) SC_STRINGIFY_IMPL(s)
 #define SC_EXPECT(cond)                                                        \
-    if (!(cond))                                                               \
-    ::sc::contract_check_failed(SC_STRINGIFY(cond))
+    do {                                                                       \
+        if (!(cond)) {                                                         \
+            ::sc::contract_check_failed(SC_STRINGIFY(cond));                   \
+            __builtin_unreachable();                                           \
+        }                                                                      \
+    }                                                                          \
+    while (0)
 
 namespace sc
 {
