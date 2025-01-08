@@ -54,6 +54,12 @@ struct PipewireCaptureSource
                                    std::size_t frame_size,
                                    SampleFormat sample_format);
 
+    PipewireCaptureSource(PipewireCaptureSource&&) noexcept = default;
+    ~PipewireCaptureSource();
+
+    auto operator=(PipewireCaptureSource&&) noexcept
+        -> PipewireCaptureSource& = default;
+
     using CaptureResultType = exios::Result<AVFrame*, std::error_code>;
 
     auto context() const noexcept -> exios::Context const&;
@@ -61,7 +67,7 @@ struct PipewireCaptureSource
     auto init() -> void;
     auto deinit() -> void;
     auto start_audio_stream() -> void;
-    auto stop_audio_stream() -> void;
+    auto stop_audio_stream() noexcept -> void;
     auto cancel() noexcept -> void;
     static constexpr auto name() noexcept -> char const*
     {
@@ -105,6 +111,7 @@ private:
     exios::Context context_;
     StickyCancelEvent event_;
     std::unique_ptr<detail::PipewireCaptureSourceState> state_;
+    bool running_ { false };
 };
 
 } // namespace sc

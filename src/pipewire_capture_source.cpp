@@ -27,6 +27,8 @@ PipewireCaptureSource::PipewireCaptureSource(exios::Context const& ctx,
     state_->required_sample_rate = params.sample_rate;
 }
 
+PipewireCaptureSource::~PipewireCaptureSource() { stop_audio_stream(); }
+
 auto PipewireCaptureSource::event() noexcept -> StickyCancelEvent&
 {
     return state_->audio_buffer_event;
@@ -124,13 +126,19 @@ auto PipewireCaptureSource::start_audio_stream() -> void
 
     pw_thread_loop_unlock(state_->loop);
     pw_thread_loop_start(state_->loop);
+    running_ = true;
+
+    log(LogLevel::debug, "Audio stream started");
 }
 
-auto PipewireCaptureSource::stop_audio_stream() -> void
+auto PipewireCaptureSource::stop_audio_stream() noexcept -> void
 {
-    pw_thread_loop_stop(state_->loop);
-    pw_stream_destroy(state_->stream);
-    pw_thread_loop_destroy(state_->loop);
+    auto const was_running = std::exchange(running_, false);
+    if (was_running) {
+        pw_thread_loop_stop(state_->loop);
+        pw_stream_destroy(state_->stream);
+        pw_thread_loop_destroy(state_->loop);
+    }
 }
 
 auto PipewireCaptureSource::cancel() noexcept -> void
