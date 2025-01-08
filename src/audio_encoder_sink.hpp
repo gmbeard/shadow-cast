@@ -55,7 +55,7 @@ struct AudioEncoderSink
     }
 
     auto frame_size() const noexcept -> std::size_t;
-    auto sample_format() const noexcept -> SampleFormat;
+    auto sample_format() const -> SampleFormat;
 
 private:
     exios::Context ctx_;

@@ -108,7 +108,7 @@ auto AudioEncoderSink::frame_size() const noexcept -> std::size_t
     return encoder_context_->frame_size ? encoder_context_->frame_size
                                         : kDefaultAudioFrameSize;
 }
-auto AudioEncoderSink::sample_format() const noexcept -> SampleFormat
+auto AudioEncoderSink::sample_format() const -> SampleFormat
 {
     return convert_from_libav_format(encoder_context_->sample_fmt);
 }
