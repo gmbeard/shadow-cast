@@ -1,3 +1,7 @@
+## 0.7.2
+### PATCH Changes:
+- The mouse cursor is now captured on Wayland (fixes #14)
+
 ## 0.7.1
 ### PATCH Changes:
 - Users now are now no longer required to have the `shadow-cast-kms` executable in their `$PATH` if installed to a custom location. The process will look for it in the same location as the main `shadow-cast` executable.
