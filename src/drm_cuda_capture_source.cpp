@@ -422,7 +422,11 @@ auto DRMCudaCaptureSource::capture_(
 
     WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion,
                  [&] { color_converter_.convert(mouse_params); });
-    egl().eglSwapBuffers(egl_display_, egl_surface_);
+    /* NOTE:
+     * Calling eglSwapBuffers appears to hang after a couple of frames...
+     *
+     * egl().eglSwapBuffers(egl_display_, egl_surface_);
+     */
     WITH_PROFILE(metrics::ProfileSectionId::cuda_copy_frame, [&] {
         copy_texture_to_frame(cuda_ctx_, cuda_gfx_resource_, frame);
     });
