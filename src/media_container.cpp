@@ -1,10 +1,12 @@
 #include "./media_container.hpp"
 #include "error.hpp"
+#include "logging.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include "utils/contracts.hpp"
 #include "utils/scope_guard.hpp"
 #include <algorithm>
 #include <functional>
+#include <libavutil/avutil.h>
 #include <span>
 
 namespace sc
@@ -98,6 +100,10 @@ auto MediaContainer::add_stream(AVCodecContext const* encoder) -> void
     if (!stream)
         throw sc::CodecError { "Failed to allocate stream" };
 
+    if (encoder->codec_type == AVMEDIA_TYPE_VIDEO) {
+        stream->avg_frame_rate = encoder->framerate;
+    }
+
     if (auto const ret =
             avcodec_parameters_from_context(stream->codecpar, encoder);
         ret < 0) {
@@ -129,9 +135,15 @@ auto MediaContainer::encode_frame(AVFrame* frame,
             throw std::runtime_error { "receive packet error" };
         }
 
+        if (pool_item->packet->dts != AV_NOPTS_VALUE ||
+            pool_item->packet->pts != AV_NOPTS_VALUE) {
+            auto const source_timebase =
+                ctx->pkt_timebase.num ? ctx->pkt_timebase : ctx->time_base;
+            av_packet_rescale_ts(
+                pool_item->packet, source_timebase, stream->time_base);
+        }
+
         pool_item->packet->stream_index = stream->index;
-        av_packet_rescale_ts(
-            pool_item->packet, ctx->time_base, stream->time_base);
 
         output_queue_.enqueue(pool_item.release());
     }

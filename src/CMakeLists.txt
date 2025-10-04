@@ -16,6 +16,7 @@ target_sources(
         cuda.cpp
         desktop.cpp
         drm_cuda_capture_source.cpp
+        frame_timer.cpp
         gpu.cpp
         logging.cpp
         media_container.cpp

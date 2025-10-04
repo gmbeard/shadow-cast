@@ -14,6 +14,7 @@
 #include "utils/cmd_line.hpp"
 #include "utils/scope_guard.hpp"
 #include <EGL/egl.h>
+#include <chrono>
 #include <type_traits>
 
 namespace sc
@@ -157,6 +158,10 @@ private:
     UnixSocket drm_socket_;
     ColorConverter color_converter_;
     cu::GraphicsResource cuda_gfx_resource_;
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_time_us_ {
+        std::chrono::high_resolution_clock::now()
+    };
+    std::size_t first_frame_ { 1 };
 };
 
 } // namespace sc

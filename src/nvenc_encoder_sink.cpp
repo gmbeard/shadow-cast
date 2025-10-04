@@ -7,6 +7,7 @@
 #include <cstdint>
 extern "C" {
 #include <libavcodec/codec.h>
+#include <libavutil/avutil.h>
 #include <libavutil/dict.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/pixfmt.h>
@@ -63,14 +64,15 @@ auto create_encoder_context(sc::Parameters const& params,
     auto const framerate =
         av_make_q(static_cast<int>(params.frame_time.fps()), 1);
     video_encoder_context->framerate = framerate;
-    video_encoder_context->time_base = av_inv_q(framerate);
+    /* This allows for VFR encoding; The time base is microseconds
+     * so allows for better capture-to-capture interval variation...
+     */
+    video_encoder_context->time_base = AV_TIME_BASE_Q;
     video_encoder_context->sample_aspect_ratio = av_make_q(0, 1);
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
     video_encoder_context->bit_rate = params.bitrate;
-    if (params.bitrate) {
-        video_encoder_context->max_b_frames = 2;
-        video_encoder_context->gop_size = framerate.num * 2;
-    }
+    video_encoder_context->gop_size = framerate.num * 2;
+    video_encoder_context->max_b_frames = 0;
 
     video_encoder_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -192,6 +194,7 @@ auto NvencEncoderSink::prepare() -> input_type
     frame_->color_trc = encoder_context_->color_trc;
     frame_->colorspace = encoder_context_->colorspace;
     frame_->chroma_location = encoder_context_->chroma_sample_location;
+    frame_->pts = 0;
 
     /* FIX: We need to return some sort of RAII type instead of a
      * raw frame here. If we throw between the call to `prepare()` and

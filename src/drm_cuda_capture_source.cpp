@@ -12,8 +12,11 @@
 #include "nvidia/cuda.hpp"
 #include "platform/egl.hpp"
 #include "utils/cmd_line.hpp"
+#include "utils/scope_guard.hpp"
 #include <GL/gl.h>
+#include <chrono>
 #include <filesystem>
+#include <utility>
 
 namespace sc::cu
 {
@@ -277,6 +280,9 @@ auto DRMCudaCaptureSource::init() -> void
     drm_socket_ = UnixSocket { sc::get_value(socket_result) };
 
     egl().eglSwapInterval(egl_display_, 0);
+
+    using ClockType = std::chrono::high_resolution_clock;
+    start_time_us_ = ClockType::now();
 }
 
 auto DRMCudaCaptureSource::deinit() -> void
@@ -291,10 +297,18 @@ auto DRMCudaCaptureSource::capture_(
     void* data) -> void
 {
     /* WARN:
-     *  This function _must_ complete synchronously. It must not do any "stack
+     * This function _must_ complete synchronously. It must not do any "stack
      * ripping" because `data` is a pointer to a callback in the current stack
      * frame.
      */
+
+    /* Adjust the start time to start at the first capture invocation;
+     * `first_frame_` will be set to zero on every subsequent invocation, so
+     * this adjustment will only apply to the first invocation...
+     */
+    auto const start_offset =
+        std::chrono::high_resolution_clock::now() - start_time_us_;
+    start_time_us_ += (start_offset * first_frame_);
 
     auto const r =
         WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
@@ -430,7 +444,23 @@ auto DRMCudaCaptureSource::capture_(
     WITH_PROFILE(metrics::ProfileSectionId::cuda_copy_frame, [&] {
         copy_texture_to_frame(cuda_ctx_, cuda_gfx_resource_, frame);
     });
-    frame->pts = frame_number_++;
+
+    /* Here, we're forcing the first frame's PTS value to zero by multiplying
+     * the elapsed time since capture start by `1` and then subtracting
+     * this from the final PTS value. For every subsequent frame we
+     * multiply by `0`, meaning we're always subtracting `0` from the final
+     * PTS value. Importantly, we're avoiding a conditional statement that is
+     * only needed for the first frame...
+     */
+    auto const elapsed_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::high_resolution_clock::now() - start_time_us_)
+            .count();
+
+    auto const first_frame_adjustment =
+        elapsed_us * std::exchange(first_frame_, 0);
+    frame->pts = elapsed_us - first_frame_adjustment;
+
     completion(*this, frame, data);
 }
 
