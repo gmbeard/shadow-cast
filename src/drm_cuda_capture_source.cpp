@@ -4,6 +4,7 @@
 #include "config.hpp"
 #include "cuda.hpp"
 #include "drm/messaging.hpp"
+#include "frame_timer.hpp"
 #include "io/accept_handler.hpp"
 #include "io/message_sender.hpp"
 #include "io/unix_socket.hpp"
@@ -13,9 +14,12 @@
 #include "platform/egl.hpp"
 #include "utils/cmd_line.hpp"
 #include "utils/scope_guard.hpp"
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GL/gl.h>
 #include <chrono>
 #include <filesystem>
+#include <unistd.h>
 #include <utility>
 
 namespace sc::cu
@@ -192,6 +196,66 @@ auto copy_texture_to_frame(CUcontext cuda_context,
             });
     });
 }
+
+struct SyncFence
+{
+    SyncFence(SyncFence&&) = delete;
+
+    explicit SyncFence(int fence_fd, EGLDisplay const& display) noexcept
+        : display_ { display }
+    {
+        std::intptr_t const sync_attr[] = { EGL_SYNC_NATIVE_FENCE_FD_ANDROID,
+                                            fence_fd,
+                                            EGL_NONE };
+        fence_ = sc::egl().eglCreateSync(
+            display_, EGL_SYNC_NATIVE_FENCE_ANDROID, sync_attr);
+
+        if (fence_ == EGL_NO_SYNC)
+            ::close(fence_fd);
+    }
+
+    ~SyncFence()
+    {
+        if (fence_ != EGL_NO_SYNC) {
+            sc::egl().eglDestroySync(display_, fence_);
+        }
+    }
+
+    auto operator=(SyncFence&&) -> SyncFence& = delete;
+
+    operator bool() const noexcept { return fence_ != EGL_NO_SYNC; }
+
+    operator EGLSync() const noexcept { return fence_; }
+
+private:
+    EGLDisplay display_;
+    EGLSync fence_ { EGL_NO_SYNC };
+};
+
+[[nodiscard]] auto
+try_wait_sync_fence(EGLDisplay display,
+                    EGLSync fence,
+                    sc::frame_timer const& frame_budget) noexcept -> bool
+{
+    using std::chrono::duration_cast;
+    using std::chrono::nanoseconds;
+
+    auto const wait_time_ns =
+        duration_cast<nanoseconds>(
+            frame_budget.duration_until_next_frame_from(frame_budget.now()))
+            .count();
+
+    auto const wait_result = sc::egl().eglClientWaitSync(
+        display, fence, EGL_SYNC_FLUSH_COMMANDS_BIT, wait_time_ns);
+
+    if (wait_result == EGL_TIMEOUT_EXPIRED) {
+        sc::log(sc::LogLevel::warn, "EGL sync timed out!");
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 namespace sc
@@ -279,6 +343,9 @@ auto DRMCudaCaptureSource::init() -> void
 
     drm_socket_ = UnixSocket { sc::get_value(socket_result) };
 
+    /* TODO:
+     * Is this needed if we're doing explicit sync?...
+     */
     egl().eglSwapInterval(egl_display_, 0);
 
     using ClockType = std::chrono::high_resolution_clock;
@@ -293,6 +360,7 @@ auto DRMCudaCaptureSource::deinit() -> void
 
 auto DRMCudaCaptureSource::capture_(
     AVFrame* frame,
+    frame_timer frame_budget,
     auto (*completion)(DRMCudaCaptureSource&, AVFrame*, void*)->void,
     void* data) -> void
 {
@@ -301,14 +369,6 @@ auto DRMCudaCaptureSource::capture_(
      * ripping" because `data` is a pointer to a callback in the current stack
      * frame.
      */
-
-    /* Adjust the start time to start at the first capture invocation;
-     * `first_frame_` will be set to zero on every subsequent invocation, so
-     * this adjustment will only apply to the first invocation...
-     */
-    auto const start_offset =
-        std::chrono::high_resolution_clock::now() - start_time_us_;
-    start_time_us_ += (start_offset * first_frame_);
 
     auto const r =
         WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
@@ -332,8 +392,9 @@ auto DRMCudaCaptureSource::capture_(
         /* If we received any dma-buf fds then it is
          * our responsibility to close them...
          */
-        for (decltype(drm_data.num_fds) i = 0; i < drm_data.num_fds; ++i)
+        for (decltype(drm_data.num_fds) i = 0; i < drm_data.num_fds; ++i) {
             ::close(drm_data.descriptors[i].fd);
+        }
     });
 
     auto begin_descriptors = std::begin(drm_data.descriptors);
@@ -351,6 +412,13 @@ auto DRMCudaCaptureSource::capture_(
         });
 
     auto const has_mouse_plane = mouse_plane_position != end_descriptors;
+
+    SyncFence const fence { descriptor->sync_fd, egl_display_ };
+    if (has_mouse_plane) {
+        /* We don't care about explicit sync for the mouse pointer plane...
+         */
+        ::close(mouse_plane_position->sync_fd);
+    }
 
     // clang-format off
     std::intptr_t const img_attr[] = {
@@ -379,21 +447,22 @@ auto DRMCudaCaptureSource::capture_(
                                        std::to_string(egl().eglGetError()) };
         }
 
+        SC_SCOPE_GUARD(
+            [&] { egl().eglDestroyImage(egl_display_, input_image); });
+
         opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
                      color_converter_.input_texture(),
                      [&](auto) {
                          gl().glEGLImageTargetTexture2DOES(
                              GL_TEXTURE_EXTERNAL_OES, input_image);
                      });
-
-        SC_SCOPE_GUARD(
-            [&] { egl().eglDestroyImage(egl_display_, input_image); });
     }
 
     std::optional<MouseParameters> mouse_params {};
 
     if (has_mouse_plane) {
         auto const& mouse_descriptor = *mouse_plane_position;
+        ::close(mouse_descriptor.sync_fd);
         // clang-format off
         std::intptr_t const mouse_img_attr[] = {
             EGL_LINUX_DRM_FOURCC_EXT, mouse_descriptor.pixel_format,
@@ -434,32 +503,26 @@ auto DRMCudaCaptureSource::capture_(
                                          .y = mouse_descriptor.y };
     }
 
+    if (fence) {
+        /* Explicit sync. Ignore the error condition for now; We don't
+         * have a reliable path upstream to report this...
+         */
+        (void)try_wait_sync_fence(egl_display_, fence, frame_budget);
+    }
+
     WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion,
                  [&] { color_converter_.convert(mouse_params); });
+
     /* NOTE:
-     * Calling eglSwapBuffers appears to hang after a couple of frames...
+     * Calling eglSwapBuffers appears to hang after a couple of frames. I
+     * don't think this is needed if we're already doing explicit sync...
      *
      * egl().eglSwapBuffers(egl_display_, egl_surface_);
      */
+
     WITH_PROFILE(metrics::ProfileSectionId::cuda_copy_frame, [&] {
         copy_texture_to_frame(cuda_ctx_, cuda_gfx_resource_, frame);
     });
-
-    /* Here, we're forcing the first frame's PTS value to zero by multiplying
-     * the elapsed time since capture start by `1` and then subtracting
-     * this from the final PTS value. For every subsequent frame we
-     * multiply by `0`, meaning we're always subtracting `0` from the final
-     * PTS value. Importantly, we're avoiding a conditional statement that is
-     * only needed for the first frame...
-     */
-    auto const elapsed_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::high_resolution_clock::now() - start_time_us_)
-            .count();
-
-    auto const first_frame_adjustment =
-        elapsed_us * std::exchange(first_frame_, 0);
-    frame->pts = elapsed_us - first_frame_adjustment;
 
     completion(*this, frame, data);
 }

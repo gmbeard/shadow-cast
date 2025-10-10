@@ -15,6 +15,10 @@ struct frame_timer
         std::chrono::duration<clock_type::rep, clock_type::period> frame_time,
         std::chrono::time_point<clock_type> start_time =
             clock_type::now()) noexcept;
+    auto start_time() const noexcept
+        -> std::chrono::time_point<clock_type> const&;
+    auto elapsed() const noexcept
+        -> std::chrono::duration<clock_type::rep, clock_type::period>;
     auto reset(std::chrono::time_point<clock_type> start_time =
                    clock_type::now()) noexcept -> void;
     auto frame_rate() const noexcept -> std::size_t;

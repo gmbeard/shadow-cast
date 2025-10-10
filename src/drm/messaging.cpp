@@ -29,18 +29,21 @@ auto DRMResponseSendHandler::operator()(int fd,
     if (response.num_fds) {
 
         msg.msg_control = cmsgbuf;
-        msg.msg_controllen = CMSG_SPACE(sizeof(int) * response.num_fds);
+        msg.msg_controllen = CMSG_SPACE(sizeof(int) * response.num_fds * 2);
 
         cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
         cmsg->cmsg_level = SOL_SOCKET;
         cmsg->cmsg_type = SCM_RIGHTS;
-        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * response.num_fds);
+        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * response.num_fds * 2);
 
         int* fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
         std::span<PlaneDescriptor const> descriptors { response.descriptors,
                                                        response.num_fds };
         for (auto const& desc : descriptors)
             *fds++ = desc.fd;
+
+        for (auto const& desc : descriptors)
+            *fds++ = desc.sync_fd;
     }
 
     return ::sendmsg(fd, &msg, 0);
@@ -66,11 +69,14 @@ auto DRMResponseReceiveHandler::operator()(int fd,
     if (response.num_fds > 0) {
         cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
         std::span<int> fds { reinterpret_cast<int*>(CMSG_DATA(cmsg)),
-                             response.num_fds };
+                             response.num_fds * 2 };
 
         SC_EXPECT(response.num_fds <= fds.size());
         for (std::uint32_t i = 0; i < response.num_fds; ++i) {
             response.descriptors[i].fd = fds[i];
+        }
+        for (std::uint32_t i = 0; i < response.num_fds; ++i) {
+            response.descriptors[i].sync_fd = fds[response.num_fds + i];
         }
     }
 

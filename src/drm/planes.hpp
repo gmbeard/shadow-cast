@@ -35,6 +35,7 @@ struct PlaneDescriptor
     int y;
     int src_w;
     int src_h;
+    int sync_fd;
 
     auto set_flag(plane_flags::PlaneFlags /* flag */) noexcept -> void;
     auto is_flag_set(plane_flags::PlaneFlags /* flag */) const noexcept -> bool;

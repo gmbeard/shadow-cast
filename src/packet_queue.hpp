@@ -28,7 +28,9 @@ struct PacketQueue
     PacketQueue(std::size_t max_size = kDefaultMaxPacketQueueSize) noexcept;
     ~PacketQueue();
 
-    auto empty() noexcept -> bool;
+    auto pool_size() const noexcept -> std::size_t;
+    auto pool_capacity() const noexcept -> std::size_t;
+    auto empty() const noexcept -> bool;
     auto prepare()
         -> SynchronizedPool<PacketPoolItem, PacketPoolLifetime>::ItemPtr;
     auto enqueue(PacketPoolItem* packet) -> void;
@@ -40,7 +42,7 @@ private:
     std::size_t size_ { 0 };
     SynchronizedPool<PacketPoolItem, PacketPoolLifetime> packet_pool_;
     IntrusiveList<PacketPoolItem> output_queue_;
-    std::mutex queue_mutex_;
+    mutable std::mutex queue_mutex_;
     std::condition_variable queue_item_ready_;
     std::condition_variable queue_space_available_;
 };

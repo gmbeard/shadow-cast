@@ -45,6 +45,9 @@ auto load_egl() -> sc::EGL
     TRY_ATTACH_SYMBOL(&egl.eglGetProcAddress, "eglGetProcAddress", lib);
     TRY_ATTACH_SYMBOL(&egl.eglMakeCurrent, "eglMakeCurrent", lib);
     TRY_ATTACH_SYMBOL(&egl.eglSwapBuffers, "eglSwapBuffers", lib);
+    TRY_ATTACH_SYMBOL(&egl.eglCreateSync, "eglCreateSync", lib);
+    TRY_ATTACH_SYMBOL(&egl.eglDestroySync, "eglDestroySync", lib);
+    TRY_ATTACH_SYMBOL(&egl.eglClientWaitSync, "eglClientWaitSync", lib);
 
     return egl;
 }

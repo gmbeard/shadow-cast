@@ -64,6 +64,14 @@ struct EGL
                                    EGLSurface draw,
                                    EGLSurface read,
                                    EGLContext ctx);
+    EGLSync (*eglCreateSync)(EGLDisplay display,
+                             EGLenum type,
+                             EGLAttrib const* attrib_list);
+    EGLBoolean (*eglDestroySync)(EGLDisplay display, EGLSync sync);
+    EGLint (*eglClientWaitSync)(EGLDisplay display,
+                                EGLSync sync,
+                                EGLint flags,
+                                EGLTime timeout);
 };
 
 auto egl() -> EGL const&;

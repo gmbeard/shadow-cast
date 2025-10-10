@@ -1,5 +1,6 @@
 #include "./media_container.hpp"
 #include "error.hpp"
+#include "frame_timer.hpp"
 #include "logging.hpp"
 #include "utils/borrowed_ptr.hpp"
 #include "utils/contracts.hpp"
@@ -139,6 +140,24 @@ auto MediaContainer::encode_frame(AVFrame* frame,
             pool_item->packet->pts != AV_NOPTS_VALUE) {
             auto const source_timebase =
                 ctx->pkt_timebase.num ? ctx->pkt_timebase : ctx->time_base;
+
+            auto const pts = pool_item->packet->pts;
+            auto const dts = pool_item->packet->dts;
+
+            if (ctx->codec_type == AVMEDIA_TYPE_VIDEO && pts < dts) {
+                log(LogLevel::warn,
+                    "Received an invalid timestamp from video encoder: dts "
+                    "(%lli) > "
+                    "pts (%lli) (src tb: %i/%i, dst tb: %i/%i). Expect some "
+                    "desync.",
+                    dts,
+                    pts,
+                    source_timebase.num,
+                    source_timebase.den,
+                    stream->time_base.num,
+                    stream->time_base.den);
+                pool_item->packet->dts = pool_item->packet->pts;
+            }
             av_packet_rescale_ts(
                 pool_item->packet, source_timebase, stream->time_base);
         }

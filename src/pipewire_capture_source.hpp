@@ -5,6 +5,7 @@
 #include "av/sample_format.hpp"
 #include "capture_source.hpp"
 #include "exios/exios.hpp"
+#include "frame_timer.hpp"
 #include "sticky_cancel_event.hpp"
 #include "utils/cmd_line.hpp"
 #include "utils/contracts.hpp"
@@ -75,7 +76,9 @@ struct PipewireCaptureSource
     };
 
     template <CaptureCompletion<CaptureResultType> Completion>
-    auto capture(AVFrame* frame, Completion&& completion) -> void
+    auto capture(AVFrame* frame,
+                 frame_timer /*unused*/,
+                 Completion&& completion) -> void
     {
         SC_EXPECT(frame->nb_samples > 0);
 

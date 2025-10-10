@@ -34,7 +34,17 @@ PacketQueue::~PacketQueue()
     }
 }
 
-auto PacketQueue::empty() noexcept -> bool
+auto PacketQueue::pool_size() const noexcept -> std::size_t
+{
+    return packet_pool_.size();
+}
+
+auto PacketQueue::pool_capacity() const noexcept -> std::size_t
+{
+    return packet_pool_.max_pool_size();
+}
+
+auto PacketQueue::empty() const noexcept -> bool
 {
     std::unique_lock lock { queue_mutex_ };
     return output_queue_.empty();

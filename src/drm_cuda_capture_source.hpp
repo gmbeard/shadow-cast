@@ -6,6 +6,7 @@
 #include "color_converter.hpp"
 #include "cuda.hpp"
 #include "exios/context.hpp"
+#include "frame_timer.hpp"
 #include "io/process.hpp"
 #include "io/unix_socket.hpp"
 #include "nvidia/cuda.hpp"
@@ -119,10 +120,14 @@ struct DRMCudaCaptureSource
     };
 
     template <CaptureCompletion<CaptureResultType> Completion>
-    auto capture(AVFrame* frame, Completion completion) -> void
+    auto capture(AVFrame* frame,
+                 frame_timer frame_budget,
+                 Completion completion) -> void
     {
-        capture_(
-            frame, &completion_proxy_<std::decay_t<Completion>>, &completion);
+        capture_(frame,
+                 frame_budget,
+                 &completion_proxy_<std::decay_t<Completion>>,
+                 &completion);
     }
 
 private:
@@ -143,6 +148,7 @@ private:
 
     auto
     capture_(AVFrame* frame,
+             frame_timer frame_budget,
              auto (*completion)(DRMCudaCaptureSource&, AVFrame*, void*)->void,
              void* data) -> void;
 

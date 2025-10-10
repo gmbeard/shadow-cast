@@ -5,6 +5,7 @@
 #include "av/codec.hpp"
 #include "cuda.hpp"
 #include "exios/exios.hpp"
+#include "frame_timer.hpp"
 #include "nvfbc.hpp"
 #include "nvidia/cuda.hpp"
 #include "sticky_cancel_timer.hpp"
@@ -36,7 +37,9 @@ struct NvfbcCaptureSource
     };
 
     template <CaptureCompletion<CaptureResultType> Completion>
-    auto capture(AVFrame* frame, Completion&& completion) -> void
+    auto capture(AVFrame* frame,
+                 frame_timer const& /*unused*/,
+                 Completion&& completion) -> void
     {
         auto const alloc = exios::select_allocator(completion);
 

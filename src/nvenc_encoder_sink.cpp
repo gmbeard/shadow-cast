@@ -71,6 +71,9 @@ auto create_encoder_context(sc::Parameters const& params,
     video_encoder_context->sample_aspect_ratio = av_make_q(0, 1);
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
     video_encoder_context->bit_rate = params.bitrate;
+    if (params.bitrate) {
+        video_encoder_context->rc_buffer_size = params.bitrate;
+    }
     video_encoder_context->gop_size = framerate.num * 2;
     video_encoder_context->max_b_frames = 0;
 

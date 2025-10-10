@@ -3,6 +3,7 @@
 #include "io.hpp"
 #include "utils.hpp"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdio>
@@ -10,11 +11,13 @@
 #include <fcntl.h>
 #include <iostream>
 #include <libdrm/drm_mode.h>
+#include <linux/dma-buf.h>
 #include <linux/limits.h>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <system_error>
@@ -266,6 +269,21 @@ auto get_fb(int drm_fd) -> OutgoingMessage
             result != 0 || fb_fd == -1)
             throw std::runtime_error { "drmPrimeHandleToFD failed" };
 
+        int sync_fd;
+        struct dma_buf_export_sync_file arg = {
+            .flags =
+                DMA_BUF_SYNC_READ, // we want to READ; get fence for writers
+            .fd = -1
+        };
+
+        if (ioctl(fb_fd, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &arg) == -1) {
+            log() << "[DRM] Plane sync not supported: " << arg.fd << "\n";
+            sync_fd = -1;
+        }
+        else {
+            sync_fd = arg.fd;
+        }
+
         SC_SCOPE_GUARD([&] {
             for (auto h : fb->handles) {
                 if (!h)
@@ -301,6 +319,7 @@ auto get_fb(int drm_fd) -> OutgoingMessage
                   << ", offset: " << msg.descriptors[descriptor_index].offset
                   << '\n';
         }
+        msg.descriptors[descriptor_index].sync_fd = sync_fd;
 
         msg.num_fds += 1;
     }
@@ -386,8 +405,10 @@ auto app(std::span<char const*> args) -> void
 
         SC_SCOPE_GUARD([&] {
             log() << "[DRM] Closing " << response.num_fds << " fds\n";
-            for (auto i = 0u; i < response.num_fds; ++i)
+            for (auto i = 0u; i < response.num_fds; ++i) {
                 close(response.descriptors[i].fd);
+                close(response.descriptors[i].sync_fd);
+            }
         });
 
         auto const send_result = socket.use_with(sc::DRMResponseSender {

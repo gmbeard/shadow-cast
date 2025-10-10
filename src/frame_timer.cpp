@@ -31,6 +31,18 @@ frame_timer::frame_timer(
 {
 }
 
+auto frame_timer::start_time() const noexcept
+    -> std::chrono::time_point<clock_type> const&
+{
+    return start_time_;
+}
+
+auto frame_timer::elapsed() const noexcept
+    -> std::chrono::duration<clock_type::rep, clock_type::period>
+{
+    return clock_type::now() - start_time_;
+}
+
 auto frame_timer::reset(std::chrono::time_point<clock_type> start_time) noexcept
     -> void
 {

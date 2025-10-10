@@ -99,7 +99,11 @@ struct Pool
 
     ~Pool() { clear(); }
 
-    auto size() const noexcept -> std::size_t { return size_; }
+    auto size() const noexcept -> std::size_t
+    {
+        SynchronizationGuard guard { sync_ };
+        return size_;
+    }
 
     auto requests() const noexcept -> std::size_t { return requests_; }
 
@@ -225,7 +229,7 @@ private:
     Allocator alloc_;
     std::size_t max_pool_size_;
     IntrusiveList<T> pool_list_;
-    Synchronization sync_;
+    mutable Synchronization sync_;
     std::atomic_size_t size_ { 0 };
     std::atomic_size_t requests_ { 0 };
     std::atomic_size_t cached_ { 0 };

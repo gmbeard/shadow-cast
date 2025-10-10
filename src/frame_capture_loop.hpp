@@ -89,12 +89,15 @@ struct AudioCaptureLoopOperation
 #ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
         frame_start = ClockType::now();
 #endif
-        frame_capture(source,
-                      sink,
-                      exios::use_allocator(std::bind(std::move(*this),
-                                                     OnCapturedFrame {},
-                                                     std::placeholders::_1),
-                                           alloc));
+        frame_capture(
+            source,
+            sink,
+            frame_timer(std::chrono::seconds(1)),
+            [](auto&) {},
+            exios::use_allocator(std::bind(std::move(*this),
+                                           OnCapturedFrame {},
+                                           std::placeholders::_1),
+                                 alloc));
     }
 
     auto operator()(OnCapturedFrame, FrameCaptureResult result) -> void
@@ -128,6 +131,24 @@ private:
         else
             std::move(completion)(exios::Result<std::error_code> {});
     }
+};
+
+struct SetFramePTS
+{
+    explicit SetFramePTS(frame_timer timer) noexcept
+        : timer_ { timer }
+    {
+    }
+
+    template <typename Frame>
+    auto operator()(Frame* frame) const noexcept -> void
+    {
+        frame->pts = std::chrono::duration_cast<std::chrono::microseconds>(
+                         timer_.elapsed())
+                         .count();
+    }
+
+    frame_timer timer_;
 };
 
 template <IntervalBasedSource Source, typename Sink, typename Completion>
@@ -168,6 +189,8 @@ struct VideoCaptureLoopOperation
         auto const alloc = exios::select_allocator(completion);
         frame_capture(source,
                       sink,
+                      sc::frame_timer(source.interval(), frame_start),
+                      SetFramePTS(frame_timer_),
                       exios::use_allocator(std::bind(std::move(*this),
                                                      OnCapturedFrame {},
                                                      std::placeholders::_1),
@@ -191,6 +214,8 @@ struct VideoCaptureLoopOperation
         cpu_time = get_cpu_usage();
         frame_capture(source,
                       sink,
+                      sc::frame_timer(source.interval(), frame_start),
+                      SetFramePTS(frame_timer_),
                       exios::use_allocator(std::bind(std::move(*this),
                                                      OnCapturedFrame {},
                                                      std::placeholders::_1),

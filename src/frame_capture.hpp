@@ -2,6 +2,7 @@
 #define SHADOW_CAST_FRAME_CAPTURE_HPP_INCLUDED
 
 #include "exios/exios.hpp"
+#include "frame_timer.hpp"
 #include <chrono>
 #include <functional>
 #include <system_error>
@@ -16,7 +17,7 @@ struct FrameCaptureMetrics
 
 using FrameCaptureResult = exios::Result<FrameCaptureMetrics, std::error_code>;
 
-template <typename Source, typename Sink, typename Completion>
+template <typename Source, typename Sink, typename Map, typename Completion>
 struct FrameCaptureOperation
 {
     using ClockType = std::chrono::high_resolution_clock;
@@ -27,9 +28,13 @@ struct FrameCaptureOperation
 
     explicit FrameCaptureOperation(Source& source,
                                    Sink& sink,
+                                   frame_timer frame_budget,
+                                   Map map,
                                    Completion completion) noexcept
         : source_ { source }
         , sink_ { sink }
+        , frame_budget_ { frame_budget }
+        , map_ { std::move(map) }
         , completion_ { std::move(completion) }
     {
     }
@@ -37,7 +42,9 @@ struct FrameCaptureOperation
     auto initiate() -> void
     {
         auto const alloc = exios::select_allocator(completion_);
+        auto const frame_budget = frame_budget_;
         source_.capture(sink_.prepare(),
+                        frame_budget,
                         exios::use_allocator(std::bind(std::move(*this),
                                                        OnSourceCaptured {},
                                                        ClockType::now(),
@@ -57,6 +64,8 @@ struct FrameCaptureOperation
                 FrameCaptureResult { exios::result_error(result.error()) });
             return;
         }
+
+        map_(result.value());
 
         auto const alloc = exios::select_allocator(completion_);
         auto fn = [completion = std::move(completion_),
@@ -82,13 +91,21 @@ struct FrameCaptureOperation
 
     Source& source_;
     Sink& sink_;
+    frame_timer frame_budget_;
+    Map map_;
     Completion completion_;
 };
 
-template <typename Source, typename Sink, typename Completion>
-auto frame_capture(Source& source, Sink& sink, Completion&& completion) -> void
+template <typename Source, typename Sink, typename Map, typename Completion>
+auto frame_capture(Source& source,
+                   Sink& sink,
+                   frame_timer frame_budget,
+                   Map&& map,
+                   Completion&& completion) -> void
 {
-    FrameCaptureOperation(source, sink, std::move(completion)).initiate();
+    FrameCaptureOperation(
+        source, sink, frame_budget, std::move(map), std::move(completion))
+        .initiate();
 }
 
 }; // namespace sc
