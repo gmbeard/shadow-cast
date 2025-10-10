@@ -211,6 +211,15 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
         .description = "Video encoder to use. Valid values are 'h264_nvenc', "
                        "'hevc_nvenc'. Default 'h264_nvenc'",
     },
+    /* DRM cache size...
+     */
+    { .short_name = 'C',
+      .long_name = "--drm-cache-size",
+      .option = sc::CmdLineOption::drm_cache_size,
+      .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
+      .validation = sc::ValidRange { 1, 20 },
+      .description =
+          "Max. number of DRM images to cache. Default 10. (Wayland only)" },
 };
 
 auto parse_long_option(std::string_view key, auto first, auto /*last*/)
@@ -497,6 +506,8 @@ auto get_parameters(CmdLine const& cmdline) noexcept
         .output_file = cmdline.args().size() ? cmdline.args()[0] : "",
         .quality = cmdline.get_option_value_or_default(
             sc::CmdLineOption::quality, 8, sc::number_value),
+        .drm_cache_size = cmdline.get_option_value_or_default(
+            sc::CmdLineOption::drm_cache_size, 10, sc::number_value),
     };
 
     if (cmdline.has_option(CmdLineOption::resolution)) {

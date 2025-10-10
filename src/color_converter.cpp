@@ -212,7 +212,6 @@ auto ColorConverter::initialize() -> void
     });
 
     fbo_ = std::move(fbo);
-    input_texture_ = opengl::create<opengl::Texture>();
     mouse_texture_ = opengl::create<opengl::Texture>();
     output_texture_ = std::move(output_texture);
     vao_ = std::move(vao);
@@ -225,11 +224,6 @@ auto ColorConverter::initialize() -> void
     initialized_ = true;
 }
 
-auto ColorConverter::input_texture() noexcept -> opengl::Texture&
-{
-    return input_texture_;
-}
-
 auto ColorConverter::mouse_texture() noexcept -> opengl::Texture&
 {
     return mouse_texture_;
@@ -240,7 +234,8 @@ auto ColorConverter::output_texture() noexcept -> opengl::Texture&
     return output_texture_;
 }
 
-auto ColorConverter::convert(std::optional<MouseParameters> mouse_params)
+auto ColorConverter::convert(opengl::Texture& screen_texture,
+                             std::optional<MouseParameters> mouse_params)
     -> void
 {
     opengl::bind(opengl::vertex_array_target, vao_, [&](auto vao_binding) {
@@ -257,7 +252,7 @@ auto ColorConverter::convert(std::optional<MouseParameters> mouse_params)
         opengl::clear(GL_COLOR_BUFFER_BIT);
 
         opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
-                     input_texture_,
+                     screen_texture,
                      [&](auto /*texture_binding*/) {
                          auto program_in_use =
                              opengl::bind(opengl::program_target, program_);

@@ -126,7 +126,8 @@ struct OpenGL
     void (*glEnable)(GLenum cap);
     void (*glBlendFunc)(GLenum sfactor, GLenum dfactor);
     const GLubyte* (*glGetString)(GLenum name);
-
+    void (*glFlush)(void);
+    void (*glFinish)(void);
     /* NOTE:
      *  Extensions...
      */

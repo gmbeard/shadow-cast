@@ -269,6 +269,8 @@ auto get_fb(int drm_fd) -> OutgoingMessage
             result != 0 || fb_fd == -1)
             throw std::runtime_error { "drmPrimeHandleToFD failed" };
 
+        log() << "[DRM] Got DRM FD " << fb_fd << ", ID " << plane->fb_id
+              << '\n';
         int sync_fd;
         struct dma_buf_export_sync_file arg = {
             .flags =
@@ -295,6 +297,7 @@ auto get_fb(int drm_fd) -> OutgoingMessage
 
         auto const descriptor_index = msg.num_fds;
         msg.descriptors[descriptor_index].fd = fb_fd;
+        msg.descriptors[descriptor_index].fb_id = fb->fb_id;
         msg.descriptors[descriptor_index].width = fb->width;
         msg.descriptors[descriptor_index].height = fb->height;
         msg.descriptors[descriptor_index].pitch = fb->pitches[0];

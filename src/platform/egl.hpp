@@ -72,6 +72,7 @@ struct EGL
                                 EGLSync sync,
                                 EGLint flags,
                                 EGLTime timeout);
+    EGLBoolean (*eglWaitSync)(EGLDisplay display, EGLSync sync, EGLint flags);
 };
 
 auto egl() -> EGL const&;

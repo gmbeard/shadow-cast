@@ -4,7 +4,10 @@
 #include "config.hpp"
 #include "cuda.hpp"
 #include "drm/messaging.hpp"
+#include "drm/planes.hpp"
 #include "frame_timer.hpp"
+#include "gl/object.hpp"
+#include "gl/texture.hpp"
 #include "io/accept_handler.hpp"
 #include "io/message_sender.hpp"
 #include "io/unix_socket.hpp"
@@ -13,12 +16,19 @@
 #include "nvidia/cuda.hpp"
 #include "platform/egl.hpp"
 #include "utils/cmd_line.hpp"
+#include "utils/contracts.hpp"
 #include "utils/scope_guard.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/gl.h>
+#include <algorithm>
+#include <cerrno>
 #include <chrono>
+#include <cstring>
+#include <fcntl.h>
 #include <filesystem>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <utility>
 
@@ -87,6 +97,7 @@ char constexpr kSocketPath[] = "/tmp/shadow-cast.sock";
 std::size_t constexpr kDRMConnectTimeoutMs = 1'000;
 std::size_t constexpr kDRMDataTimeoutMs = 1'000;
 char constexpr kDRMBin[] = "shadow-cast-kms";
+std::size_t constexpr kDRMImageIsStaleAfterFramesUnused = 10;
 
 auto get_drm_data(sc::UnixSocket& socket, std::size_t timeout, sigset_t* mask)
     -> sc::Result<sc::DRMResponse, std::error_code>
@@ -240,6 +251,10 @@ try_wait_sync_fence(EGLDisplay display,
     using std::chrono::duration_cast;
     using std::chrono::nanoseconds;
 
+    if (!sc::egl().eglWaitSync(display, fence, 0)) {
+        sc::log(sc::LogLevel::warn, "EGL server sync failed!");
+    }
+
     auto const wait_time_ns =
         duration_cast<nanoseconds>(
             frame_budget.duration_until_next_frame_from(frame_budget.now()))
@@ -278,6 +293,7 @@ DRMCudaCaptureSource::DRMCudaCaptureSource(exios::Context context,
                          output_size.height,
                          output_scale.width,
                          output_scale.height }
+    , image_buffer_ { std::size_t(params.drm_cache_size) }
 {
 }
 
@@ -345,15 +361,137 @@ auto DRMCudaCaptureSource::init() -> void
 
     /* TODO:
      * Is this needed if we're doing explicit sync?...
+     * egl().eglSwapInterval(egl_display_, 0);
      */
-    egl().eglSwapInterval(egl_display_, 0);
+    egl().eglSwapInterval(egl_display_, 1);
 
-    using ClockType = std::chrono::high_resolution_clock;
-    start_time_us_ = ClockType::now();
+    auto const r =
+        WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
+            return get_drm_data(
+                drm_socket_, kDRMDataTimeoutMs, &drm_proc_mask_);
+        });
+
+    if (!r) {
+        if (sc::get_error(r).value() == EINTR)
+            return;
+
+        throw std::system_error { r.error() };
+    }
+
+    auto const drm_data = sc::get_value(r);
+    if (!drm_data.num_fds)
+        throw std::runtime_error { "No DRM planes received" };
+
+    SC_SCOPE_GUARD([&] {
+        /* If we received any dma-buf fds then it is
+         * our responsibility to close them...
+         */
+        for (decltype(drm_data.num_fds) i = 0; i < drm_data.num_fds; ++i) {
+            ::close(drm_data.descriptors[i].fd);
+        }
+    });
+
+    auto begin_descriptors = std::begin(drm_data.descriptors);
+    auto end_descriptors =
+        std::next(std::begin(drm_data.descriptors), drm_data.num_fds);
+
+    auto const& descriptor = std::max_element(
+        begin_descriptors, end_descriptors, [](auto const& a, auto const& b) {
+            return (a.width * a.height) < (b.width * b.height);
+        });
+
+    auto const mouse_plane_position =
+        std::find_if(begin_descriptors, end_descriptors, [](auto const& plane) {
+            return plane.is_flag_set(sc::plane_flags::IS_CURSOR);
+        });
+
+    auto const has_mouse_plane = mouse_plane_position != end_descriptors;
+
+    ::close(descriptor->sync_fd);
+    if (has_mouse_plane) {
+        /* We don't care about explicit sync for the mouse pointer plane...
+         */
+        ::close(mouse_plane_position->sync_fd);
+    }
+}
+
+auto DRMCudaCaptureSource::flush_stale_image_buffers() -> void
+{
+    for (auto pos = image_buffer_.rbegin(); pos != image_buffer_.rend();
+         ++pos) {
+        buf::Item& image = std::get<1>(*pos);
+        SC_EXPECT(image.used_on_frame_number <= frame_number_);
+        auto const unused_for = frame_number_ - image.used_on_frame_number;
+        if (unused_for >= kDRMImageIsStaleAfterFramesUnused) {
+            log(LogLevel::debug,
+                "Removing stale DRM image %u. Unused for %llu frames",
+                std::get<0>(*pos),
+                unused_for);
+            image_buffer_.erase(--(pos.base()));
+        }
+    };
+}
+
+auto DRMCudaCaptureSource::get_image_buffer(PlaneDescriptor const& descriptor)
+    -> buf::Item&
+{
+    auto pos = image_buffer_.find(descriptor.fb_id);
+    if (pos == image_buffer_.end()) {
+
+        image_buffer_largest_size_ =
+            std::max(image_buffer_largest_size_, image_buffer_.size());
+        flush_stale_image_buffers();
+
+        // clang-format off
+        std::intptr_t const img_attr[] = {
+            EGL_LINUX_DRM_FOURCC_EXT, descriptor.pixel_format,
+            EGL_WIDTH, descriptor.width,
+            EGL_HEIGHT, descriptor.height,
+            EGL_DMA_BUF_PLANE0_FD_EXT, descriptor.fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, descriptor.offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, descriptor.pitch,
+            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, static_cast<std::uint32_t>(descriptor.modifier & 0xffffffffull),
+            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, static_cast<std::uint32_t>(descriptor.modifier >> 32ull),
+            EGL_NONE
+        };
+        // clang-format on
+        auto image = egl().eglCreateImage(egl_display_,
+                                          EGL_NO_CONTEXT,
+                                          EGL_LINUX_DMA_BUF_EXT,
+                                          static_cast<EGLClientBuffer>(nullptr),
+                                          img_attr);
+        if (image == EGL_NO_IMAGE) {
+            throw std::runtime_error { "eglCreateImage input failed: " +
+                                       std::to_string(egl().eglGetError()) };
+        }
+
+        auto [item, inserted] =
+            image_buffer_.insert(descriptor.fb_id,
+                                 buf::Item { egl_display_,
+                                             image,
+                                             opengl::create<opengl::Texture>(),
+                                             frame_number_ });
+        SC_EXPECT(inserted);
+        pos = item;
+    }
+    else {
+        image_buffer_cache_hits_ += 1;
+        pos->second.used_on_frame_number = frame_number_;
+    }
+
+    return pos->second;
 }
 
 auto DRMCudaCaptureSource::deinit() -> void
 {
+    log(LogLevel::info,
+        "DRM image cache hits: %llu/%llu frames (%6.2f%%). Largest "
+        "size: %llu/%llu",
+        image_buffer_cache_hits_,
+        frame_number_,
+        ((float)image_buffer_cache_hits_ / frame_number_) * 100,
+        image_buffer_largest_size_,
+        image_buffer_.capacity());
     static_cast<void>(drm_process_.terminate_and_wait());
     drm_socket_.close();
 }
@@ -420,43 +558,7 @@ auto DRMCudaCaptureSource::capture_(
         ::close(mouse_plane_position->sync_fd);
     }
 
-    // clang-format off
-    std::intptr_t const img_attr[] = {
-        EGL_LINUX_DRM_FOURCC_EXT, descriptor->pixel_format,
-        EGL_WIDTH, descriptor->width,
-        EGL_HEIGHT, descriptor->height,
-        EGL_DMA_BUF_PLANE0_FD_EXT, descriptor->fd,
-        EGL_DMA_BUF_PLANE0_OFFSET_EXT, descriptor->offset,
-        EGL_DMA_BUF_PLANE0_PITCH_EXT, descriptor->pitch,
-        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, static_cast<std::uint32_t>(descriptor->modifier & 0xffffffffull),
-        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, static_cast<std::uint32_t>(descriptor->modifier >> 32ull),
-        EGL_NONE
-    };
-    // clang-format on
-
-    {
-        EGLImage input_image =
-            egl().eglCreateImage(egl_display_,
-                                 EGL_NO_CONTEXT,
-                                 EGL_LINUX_DMA_BUF_EXT,
-                                 static_cast<EGLClientBuffer>(nullptr),
-                                 img_attr);
-
-        if (input_image == EGL_NO_IMAGE) {
-            throw std::runtime_error { "eglCreateImage input failed: " +
-                                       std::to_string(egl().eglGetError()) };
-        }
-
-        SC_SCOPE_GUARD(
-            [&] { egl().eglDestroyImage(egl_display_, input_image); });
-
-        opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
-                     color_converter_.input_texture(),
-                     [&](auto) {
-                         gl().glEGLImageTargetTexture2DOES(
-                             GL_TEXTURE_EXTERNAL_OES, input_image);
-                     });
-    }
+    buf::Item& image = get_image_buffer(*descriptor);
 
     std::optional<MouseParameters> mouse_params {};
 
@@ -510,19 +612,23 @@ auto DRMCudaCaptureSource::capture_(
         (void)try_wait_sync_fence(egl_display_, fence, frame_budget);
     }
 
-    WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion,
-                 [&] { color_converter_.convert(mouse_params); });
+    WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion, [&] {
+        color_converter_.convert(image.texture, mouse_params);
+    });
 
-    /* NOTE:
-     * Calling eglSwapBuffers appears to hang after a couple of frames. I
-     * don't think this is needed if we're already doing explicit sync...
-     *
-     * egl().eglSwapBuffers(egl_display_, egl_surface_);
+    /* Ensure all the rendering commands have completed, otherwise we
+     * risk copying an old frame.
+     * TODO: Is there a way to make the CUDA copy wait on some sort of shared
+     * sync primitive? It seems quite wasteful to just block the CPU here.
      */
+    gl().glFlush();
+    gl().glFinish();
 
     WITH_PROFILE(metrics::ProfileSectionId::cuda_copy_frame, [&] {
         copy_texture_to_frame(cuda_ctx_, cuda_gfx_resource_, frame);
     });
+
+    frame_number_ += 1;
 
     completion(*this, frame, data);
 }

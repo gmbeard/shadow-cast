@@ -3,6 +3,7 @@
 
 #include <cinttypes>
 #include <cstddef>
+#include <cstdint>
 
 namespace sc
 {
@@ -21,6 +22,7 @@ enum PlaneFlags : std::uint32_t
 struct PlaneDescriptor
 {
     int fd;
+    uint32_t fb_id;
     uint32_t width;
     uint32_t height;
     uint32_t pitch;

@@ -48,6 +48,7 @@ auto load_egl() -> sc::EGL
     TRY_ATTACH_SYMBOL(&egl.eglCreateSync, "eglCreateSync", lib);
     TRY_ATTACH_SYMBOL(&egl.eglDestroySync, "eglDestroySync", lib);
     TRY_ATTACH_SYMBOL(&egl.eglClientWaitSync, "eglClientWaitSync", lib);
+    TRY_ATTACH_SYMBOL(&egl.eglWaitSync, "eglWaitSync", lib);
 
     return egl;
 }

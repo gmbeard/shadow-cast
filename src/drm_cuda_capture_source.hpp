@@ -5,17 +5,22 @@
 #include "capture_source.hpp"
 #include "color_converter.hpp"
 #include "cuda.hpp"
+#include "drm/planes.hpp"
 #include "exios/context.hpp"
 #include "frame_timer.hpp"
+#include "gl/texture.hpp"
 #include "io/process.hpp"
 #include "io/unix_socket.hpp"
+#include "lru_map.hpp"
 #include "nvidia/cuda.hpp"
-#include "platform/wayland.hpp"
+#include "platform/egl.hpp"
 #include "sticky_cancel_timer.hpp"
 #include "utils/cmd_line.hpp"
 #include "utils/scope_guard.hpp"
 #include <EGL/egl.h>
 #include <chrono>
+#include <cstdint>
+#include <sys/types.h>
 #include <type_traits>
 
 namespace sc
@@ -91,6 +96,65 @@ auto graphics_map_resource_array(GraphicsResource& resource,
 
 } // namespace cu
 
+namespace buf
+{
+struct Item
+{
+    Item(EGLDisplay disp,
+         EGLImage img,
+         opengl::Texture tex,
+         std::size_t frame_number) noexcept
+        : display { std::move(disp) }
+        , image { std::move(img) }
+        , texture { std::move(tex) }
+        , used_on_frame_number { frame_number }
+    {
+        opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                     texture,
+                     [&](auto) {
+                         gl().glEGLImageTargetTexture2DOES(
+                             GL_TEXTURE_EXTERNAL_OES, image);
+                     });
+    }
+
+    Item(Item&& other) noexcept
+        : display { other.display }
+        , image { std::exchange(other.image, EGL_NO_IMAGE) }
+        , texture { std::move(other.texture) }
+        , used_on_frame_number { other.used_on_frame_number }
+    {
+    }
+
+    ~Item()
+    {
+        if (image != EGL_NO_IMAGE)
+            sc::egl().eglDestroyImage(display, image);
+    }
+
+    friend auto swap(Item& lhs, Item& rhs) noexcept -> void
+    {
+        using std::swap;
+        swap(lhs.display, rhs.display);
+        swap(lhs.image, rhs.image);
+        swap(lhs.texture, rhs.texture);
+        swap(lhs.used_on_frame_number, rhs.used_on_frame_number);
+    }
+
+    auto operator=(Item&& rhs) noexcept -> Item&
+    {
+        Item tmp { std::move(rhs) };
+        swap(*this, tmp);
+        return *this;
+    }
+
+    EGLDisplay display;
+    EGLImage image;
+    opengl::Texture texture;
+    std::size_t used_on_frame_number;
+};
+
+} // namespace buf
+
 struct DRMCudaCaptureSource
 {
     using CaptureResultType = exios::Result<AVFrame*, std::error_code>;
@@ -131,6 +195,9 @@ struct DRMCudaCaptureSource
     }
 
 private:
+    auto get_image_buffer(PlaneDescriptor const& descriptor) -> buf::Item&;
+    auto flush_stale_image_buffers() -> void;
+
     template <CaptureCompletion<CaptureResultType> Completion>
     static auto completion_proxy_(DRMCudaCaptureSource& self,
                                   AVFrame* frame,
@@ -164,10 +231,9 @@ private:
     UnixSocket drm_socket_;
     ColorConverter color_converter_;
     cu::GraphicsResource cuda_gfx_resource_;
-    std::chrono::time_point<std::chrono::high_resolution_clock> start_time_us_ {
-        std::chrono::high_resolution_clock::now()
-    };
-    std::size_t first_frame_ { 1 };
+    lru_map<std::uint32_t, buf::Item> image_buffer_;
+    std::size_t image_buffer_cache_hits_ { 0 };
+    std::size_t image_buffer_largest_size_ { 0 };
 };
 
 } // namespace sc

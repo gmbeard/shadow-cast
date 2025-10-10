@@ -42,6 +42,7 @@ enum class CmdLineOption
     sample_rate,
     version,
     video_encoder,
+    drm_cache_size,
 };
 
 enum class CaptureQuality
@@ -70,6 +71,7 @@ struct Parameters
     std::optional<CaptureResolution> resolution { std::nullopt };
     std::int32_t quality { 7 };
     std::size_t bitrate { 0 };
+    std::int32_t drm_cache_size { 10 };
 };
 
 struct NoValidation
