@@ -102,6 +102,7 @@ auto MediaContainer::add_stream(AVCodecContext const* encoder) -> void
         throw sc::CodecError { "Failed to allocate stream" };
 
     if (encoder->codec_type == AVMEDIA_TYPE_VIDEO) {
+        stream->time_base = encoder->time_base;
         stream->avg_frame_rate = encoder->framerate;
     }
 

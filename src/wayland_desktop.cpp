@@ -3,6 +3,7 @@
 #include "platform/egl.hpp"
 #include "platform/opengl.hpp"
 #include "platform/wayland.hpp"
+#include <EGL/egl.h>
 #include <optional>
 #include <utility>
 #include <wayland-client-core.h>
@@ -119,24 +120,10 @@ auto initialize_wayland_desktop() noexcept
         return std::nullopt;
     }
 
-    data.surface.reset(wl_compositor_create_surface(data.compositor.get()));
-
-    if (!data.surface) {
-        log(LogLevel::error, "Failed to create Wayland surface");
-        return std::nullopt;
-    }
-
-    data.window.reset(wl_egl_window_create(data.surface.get(), 16, 16));
-
-    if (!data.window) {
-        log(LogLevel::error, "Failed to create Wayland window");
-        return std::nullopt;
-    }
-
     return data;
 }
 
-auto initialize_desktop_egl(wl_display* display, wl_egl_window* window) noexcept
+auto initialize_desktop_egl(wl_display* display) noexcept
     -> std::optional<sc::detail::EGL>
 {
     using sc::egl;
@@ -185,17 +172,6 @@ auto initialize_desktop_egl(wl_display* display, wl_egl_window* window) noexcept
         return std::nullopt;
     }
 
-    data.surface = egl().eglCreateWindowSurface(
-        data.display,
-        egl_config,
-        reinterpret_cast<EGLNativeWindowType>(window),
-        nullptr);
-
-    if (!data.surface) {
-        log(LogLevel::error, "Failed to create EGL surface");
-        return std::nullopt;
-    }
-
     data.context =
         egl().eglCreateContext(data.display, egl_config, nullptr, ctxattr);
 
@@ -205,7 +181,7 @@ auto initialize_desktop_egl(wl_display* display, wl_egl_window* window) noexcept
     }
 
     if (!egl().eglMakeCurrent(
-            data.display, data.surface, data.surface, data.context)) {
+            data.display, EGL_NO_SURFACE, EGL_NO_SURFACE, data.context)) {
         log(LogLevel::error, "Couldn't select context");
         return std::nullopt;
     }
@@ -220,8 +196,7 @@ namespace sc
 WaylandDesktop::WaylandDesktop() noexcept
 {
     if (auto data = initialize_wayland_desktop(); data) {
-        if (auto egl_data =
-                initialize_desktop_egl(data->display.get(), data->window.get());
+        if (auto egl_data = initialize_desktop_egl(data->display.get());
             egl_data) {
             data_ = std::move(*data);
             egl_ = std::move(*egl_data);

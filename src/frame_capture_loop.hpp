@@ -251,7 +251,7 @@ struct VideoCaptureLoopOperation
 
         frame_timer_.increment_frame_number();
 
-        auto next_frame_wait_duration =
+        auto const next_frame_wait_duration =
             frame_timer_.duration_until_next_frame_from(frame_finish);
         auto const expected_frame_number =
             frame_timer_.expected_frame_number_at(frame_finish);
@@ -265,7 +265,6 @@ struct VideoCaptureLoopOperation
                 source.name(),
                 lag);
             frame_timer_.increment_frame_number(lag);
-            next_frame_wait_duration = ch::nanoseconds(0);
         }
 
         auto const alloc = exios::select_allocator(completion);

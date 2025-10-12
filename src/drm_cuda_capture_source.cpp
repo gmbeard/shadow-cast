@@ -281,14 +281,12 @@ DRMCudaCaptureSource::DRMCudaCaptureSource(exios::Context context,
                                            VideoOutputSize output_size,
                                            VideoOutputScale output_scale,
                                            CUcontext cuda_ctx,
-                                           EGLDisplay egl_display,
-                                           EGLSurface egl_surface) noexcept
+                                           EGLDisplay egl_display) noexcept
     : ctx_ { context }
     , timer_ { context }
     , frame_interval_ { params.frame_time.value() }
     , cuda_ctx_ { cuda_ctx }
     , egl_display_ { std::move(egl_display) }
-    , egl_surface_ { std::move(egl_surface) }
     , color_converter_ { output_size.width,
                          output_size.height,
                          output_scale.width,
@@ -360,10 +358,9 @@ auto DRMCudaCaptureSource::init() -> void
     drm_socket_ = UnixSocket { sc::get_value(socket_result) };
 
     /* TODO:
-     * Is this needed if we're doing explicit sync?...
+     * Is this needed if we're doing off-screen rendering?...
      * egl().eglSwapInterval(egl_display_, 0);
      */
-    egl().eglSwapInterval(egl_display_, 1);
 
     auto const r =
         WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
@@ -618,11 +615,8 @@ auto DRMCudaCaptureSource::capture_(
 
     /* Ensure all the rendering commands have completed, otherwise we
      * risk copying an old frame.
-     * TODO: Is there a way to make the CUDA copy wait on some sort of shared
-     * sync primitive? It seems quite wasteful to just block the CPU here.
      */
     gl().glFlush();
-    gl().glFinish();
 
     WITH_PROFILE(metrics::ProfileSectionId::cuda_copy_frame, [&] {
         copy_texture_to_frame(cuda_ctx_, cuda_gfx_resource_, frame);

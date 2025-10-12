@@ -164,8 +164,7 @@ struct DRMCudaCaptureSource
                          VideoOutputSize output_size,
                          VideoOutputScale output_scale,
                          CUcontext cuda_ctx,
-                         EGLDisplay egl_display,
-                         EGLSurface egl_surface) noexcept;
+                         EGLDisplay egl_display) noexcept;
 
     DRMCudaCaptureSource(DRMCudaCaptureSource&&) noexcept = default;
 
@@ -224,7 +223,6 @@ private:
     std::chrono::nanoseconds frame_interval_;
     CUcontext cuda_ctx_;
     EGLDisplay egl_display_;
-    EGLSurface egl_surface_;
     std::size_t frame_number_ { 0 };
     sigset_t drm_proc_mask_ {};
     Process drm_process_;

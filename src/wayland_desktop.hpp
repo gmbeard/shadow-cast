@@ -94,8 +94,6 @@ struct WaylandData
     detail::RegistryPtr registry;
     detail::OutputPtr output;
     detail::CompositorPtr compositor;
-    detail::SurfacePtr surface;
-    detail::WindowPtr window;
     VideoOutputSize video_output_size {};
 };
 
