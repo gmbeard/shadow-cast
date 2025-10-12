@@ -261,9 +261,10 @@ struct VideoCaptureLoopOperation
             std::ptrdiff_t const lag =
                 expected_frame_number - actual_frame_number;
             log(LogLevel::warn,
-                "%s: Lagging behind by %ti frame(s)",
+                "%s: Lagging behind by %ti frame(s) at frame %llu",
                 source.name(),
-                lag);
+                lag,
+                actual_frame_number);
             frame_timer_.increment_frame_number(lag);
         }
 

@@ -243,28 +243,14 @@ private:
     EGLSync fence_ { EGL_NO_SYNC };
 };
 
-[[nodiscard]] auto
-try_wait_sync_fence(EGLDisplay display,
-                    EGLSync fence,
-                    sc::frame_timer const& frame_budget) noexcept -> bool
+[[nodiscard]] auto try_wait_sync_fence(EGLDisplay display,
+                                       EGLSync fence) noexcept -> bool
 {
     using std::chrono::duration_cast;
     using std::chrono::nanoseconds;
 
     if (!sc::egl().eglWaitSync(display, fence, 0)) {
         sc::log(sc::LogLevel::warn, "EGL server sync failed!");
-    }
-
-    auto const wait_time_ns =
-        duration_cast<nanoseconds>(
-            frame_budget.duration_until_next_frame_from(frame_budget.now()))
-            .count();
-
-    auto const wait_result = sc::egl().eglClientWaitSync(
-        display, fence, EGL_SYNC_FLUSH_COMMANDS_BIT, wait_time_ns);
-
-    if (wait_result == EGL_TIMEOUT_EXPIRED) {
-        sc::log(sc::LogLevel::warn, "EGL sync timed out!");
         return false;
     }
 
@@ -356,11 +342,6 @@ auto DRMCudaCaptureSource::init() -> void
         throw std::system_error { sc::get_error(socket_result) };
 
     drm_socket_ = UnixSocket { sc::get_value(socket_result) };
-
-    /* TODO:
-     * Is this needed if we're doing off-screen rendering?...
-     * egl().eglSwapInterval(egl_display_, 0);
-     */
 
     auto const r =
         WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
@@ -495,7 +476,7 @@ auto DRMCudaCaptureSource::deinit() -> void
 
 auto DRMCudaCaptureSource::capture_(
     AVFrame* frame,
-    frame_timer frame_budget,
+    frame_timer /*frame_budget*/,
     auto (*completion)(DRMCudaCaptureSource&, AVFrame*, void*)->void,
     void* data) -> void
 {
@@ -606,7 +587,9 @@ auto DRMCudaCaptureSource::capture_(
         /* Explicit sync. Ignore the error condition for now; We don't
          * have a reliable path upstream to report this...
          */
-        (void)try_wait_sync_fence(egl_display_, fence, frame_budget);
+        if (!try_wait_sync_fence(egl_display_, fence)) {
+            log(LogLevel::warn, "Wait for explicit sync fence failed");
+        }
     }
 
     WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion, [&] {
