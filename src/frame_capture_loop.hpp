@@ -8,6 +8,8 @@
 #include "frame_timer.hpp"
 #include "logging.hpp"
 #include <cstddef>
+#include <system_error>
+#include <variant>
 #ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
 #include "cpu_usage.hpp"
 #include "metrics/metrics.hpp"
@@ -126,8 +128,9 @@ private:
          */
 
         if (!result)
-            std::move(completion)(exios::Result<std::error_code> {
-                exios::result_error(result.error()) });
+            std::move(completion)(
+                exios::Result<std::error_code> { exios::result_error(
+                    std::get<std::error_code>(result.error())) });
         else
             std::move(completion)(exios::Result<std::error_code> {});
     }
@@ -176,13 +179,18 @@ struct VideoCaptureLoopOperation
     };
     TimePoint frame_start = ClockType::now();
     TimePoint loop_start = frame_start;
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
     std::uint64_t cpu_time = get_cpu_usage();
+#else
+    std::uint64_t cpu_time { 0 };
+#endif
     std::size_t frame_backlog { 0 };
     std::size_t frame_number { 0 };
     std::int64_t total_frame_time { 0 };
     std::size_t frame_lag { 0 };
     std::size_t frame_lag_start { 0 };
-    frame_timer frame_timer_ { source.interval(), loop_start };
+    frame_timer pts_timer_ { source.interval(), loop_start };
+    frame_timer loop_timer_ { source.interval(), loop_start };
 
     auto initiate() -> void
     {
@@ -190,7 +198,7 @@ struct VideoCaptureLoopOperation
         frame_capture(source,
                       sink,
                       sc::frame_timer(source.interval(), frame_start),
-                      SetFramePTS(frame_timer_),
+                      SetFramePTS(pts_timer_),
                       exios::use_allocator(std::bind(std::move(*this),
                                                      OnCapturedFrame {},
                                                      std::placeholders::_1),
@@ -207,15 +215,17 @@ struct VideoCaptureLoopOperation
 
         /* Record the required frame start time...
          */
-        frame_start = frame_timer_.now();
+        frame_start = loop_timer_.now();
         auto const alloc =
             exios::select_allocator(completion, std::allocator<void> {});
 
+#ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
         cpu_time = get_cpu_usage();
+#endif
         frame_capture(source,
                       sink,
                       sc::frame_timer(source.interval(), frame_start),
-                      SetFramePTS(frame_timer_),
+                      SetFramePTS(pts_timer_),
                       exios::use_allocator(std::bind(std::move(*this),
                                                      OnCapturedFrame {},
                                                      std::placeholders::_1),
@@ -226,7 +236,8 @@ struct VideoCaptureLoopOperation
     {
         namespace ch = std::chrono;
 
-        auto const frame_finish = frame_timer_.now();
+
+        auto const frame_finish = loop_timer_.now();
 
 #ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
         auto const metrics_elapsed_ns =
@@ -243,21 +254,47 @@ struct VideoCaptureLoopOperation
                 metrics_total_ns * 1000));
 #endif
 
+        std::uint32_t phase_offset = 0;
         if (!result) {
-            finalize(
-                FrameCaptureResult { exios::result_error(result.error()) });
-            return;
+            if (std::holds_alternative<std::error_code>(result.error())) {
+                finalize(FrameCaptureResult { exios::result_error(
+                    std::get<std::error_code>(result.error())) });
+                return;
+            }
+
+            phase_offset =
+                std::get<frame_capture_out_of_phase_error>(result.error())
+                    .phase_offset;
         }
 
-        frame_timer_.increment_frame_number();
+        auto const interval =
+            ch::duration_cast<ch::nanoseconds>(source.interval()).count();
+
+        SC_EXPECT(phase_offset <= interval);
+
+        bool const needs_offset = phase_offset > 0;
+
+        if (needs_offset) {
+            /* TODO:
+             * Which is the better option, here; backwards or forwards??
+             */
+            // loop_timer_.add_offset(ch::nanoseconds(interval - phase_offset));
+            log(LogLevel::debug,
+                "Missed frame. Offsetting -%uns",
+                phase_offset);
+            loop_timer_.subtract_offset(ch::nanoseconds(phase_offset));
+        }
+        else {
+            loop_timer_.increment_frame_number();
+        }
 
         auto const next_frame_wait_duration =
-            frame_timer_.duration_until_next_frame_from(frame_finish);
+            loop_timer_.duration_until_next_frame_from(frame_finish);
         auto const expected_frame_number =
-            frame_timer_.expected_frame_number_at(frame_finish);
-        auto const actual_frame_number = frame_timer_.frame_number();
+            loop_timer_.expected_frame_number_at(frame_finish);
+        auto const actual_frame_number = loop_timer_.frame_number();
 
-        if (expected_frame_number > actual_frame_number) {
+        if (expected_frame_number > actual_frame_number && !needs_offset) {
             std::ptrdiff_t const lag =
                 expected_frame_number - actual_frame_number;
             log(LogLevel::warn,
@@ -265,10 +302,13 @@ struct VideoCaptureLoopOperation
                 source.name(),
                 lag,
                 actual_frame_number);
-            frame_timer_.increment_frame_number(lag);
+            loop_timer_.increment_frame_number(lag);
         }
 
         auto const alloc = exios::select_allocator(completion);
+
+        SC_EXPECT(next_frame_wait_duration <= source.interval());
+
         source.timer().wait_for_expiry_after(
             next_frame_wait_duration,
             exios::use_allocator(std::bind(std::move(*this),
@@ -282,8 +322,9 @@ struct VideoCaptureLoopOperation
         frame_backlog -= 1;
         if (frame_backlog == 0 || !result) {
             if (!result)
-                std::move(completion)(exios::Result<std::error_code> {
-                    exios::result_error(result.error()) });
+                std::move(completion)(
+                    exios::Result<std::error_code> { exios::result_error(
+                        std::get<std::error_code>(result.error())) });
             else
                 std::move(completion)(exios::Result<std::error_code> {});
 
@@ -309,7 +350,8 @@ private:
     auto finalize(FrameCaptureResult result) -> void
     {
 
-        if (!result && result.error() != std::errc::operation_canceled)
+        if (!result && std::get<std::error_code>(result.error()) !=
+                           std::errc::operation_canceled)
             std::move(completion)(exios::Result<std::error_code> {
                 exios::result_error(result.error()) });
         else

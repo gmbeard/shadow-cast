@@ -105,6 +105,12 @@ option(
     ON
 )
 
+option(
+    SHADOW_CAST_ENABLE_TOOLBOX
+    "Enable toolbox samples for ${PROJECT_NAME}"
+    OFF
+)
+
 if (SHADOW_CAST_ENABLE_ASAN)
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)
@@ -120,6 +126,10 @@ add_subdirectory(src)
 if(SHADOW_CAST_ENABLE_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(SHADOW_CAST_ENABLE_TOOLBOX)
+    add_subdirectory(toolbox)
 endif()
 
 configure_file(

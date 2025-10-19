@@ -1,6 +1,8 @@
 #include "audio_encoder_sink.hpp"
 #include "av/sample_format.hpp"
 #include "utils/cmd_line.hpp"
+#include "utils/contracts.hpp"
+#include <libavutil/frame.h>
 
 namespace
 {
@@ -101,6 +103,12 @@ auto AudioEncoderSink::prepare() -> input_type
         throw std::runtime_error { "Couldn't make frame writable" };
 
     return frame_.get();
+}
+
+auto AudioEncoderSink::discard(input_type input) noexcept -> void
+{
+    SC_EXPECT(input == frame_.get());
+    av_frame_unref(input);
 }
 
 auto AudioEncoderSink::frame_size() const noexcept -> std::size_t

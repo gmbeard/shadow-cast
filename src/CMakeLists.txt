@@ -32,6 +32,8 @@ target_sources(
         x11_desktop.cpp
         x11_platform.cpp
         wayland_desktop.cpp
+        shared_memory.cpp
+        framebuffer_descriptor.cpp
 
         av/buffer.cpp
         av/buffer_pool.cpp

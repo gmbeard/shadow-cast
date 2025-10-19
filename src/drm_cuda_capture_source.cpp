@@ -6,11 +6,13 @@
 #include "drm/messaging.hpp"
 #include "drm/planes.hpp"
 #include "frame_timer.hpp"
+#include "framebuffer_descriptor.hpp"
 #include "gl/object.hpp"
 #include "gl/texture.hpp"
 #include "io/accept_handler.hpp"
 #include "io/message_sender.hpp"
 #include "io/unix_socket.hpp"
+#include "ipc_ptr.hpp"
 #include "logging.hpp"
 #include "metrics/profiling.hpp"
 #include "nvidia/cuda.hpp"
@@ -21,6 +23,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/gl.h>
+#include <GL/glext.h>
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -61,7 +64,10 @@ auto GraphicsResource::operator=(GraphicsResource&& other) noexcept
     return *this;
 }
 
-GraphicsResource::operator bool() const noexcept { return value_ != nullptr; }
+GraphicsResource::operator bool() const noexcept
+{
+    return value_ != nullptr;
+}
 
 GraphicsResource::operator CUgraphicsResource() const noexcept
 {
@@ -93,43 +99,91 @@ auto graphics_gl_register_image(unsigned int texture_name,
 
 namespace
 {
-char constexpr kSocketPath[] = "/tmp/shadow-cast.sock";
+// char constexpr kSocketPath[] = "/tmp/shadow-cast.sock";
+char constexpr kSocketPath[] = "shadow-cast.sock";
 std::size_t constexpr kDRMConnectTimeoutMs = 1'000;
 std::size_t constexpr kDRMDataTimeoutMs = 1'000;
 char constexpr kDRMBin[] = "shadow-cast-kms";
-std::size_t constexpr kDRMImageIsStaleAfterFramesUnused = 10;
+char constexpr kSharedMemoryName[] = "/shadow-cast-shmem-0";
+float constexpr kPhaseDriftErrorThreshold = 0.7f;
 
-auto get_drm_data(sc::UnixSocket& socket, std::size_t timeout, sigset_t* mask)
-    -> sc::Result<sc::DRMResponse, std::error_code>
+auto get_drm_data(
+    sc::UnixSocket& socket,
+    sc::ipc_ptr<sc::framebuffer_descriptor_sequence>& shared_memory,
+    std::size_t timeout,
+    sigset_t* mask) -> sc::Result<sc::DRMResponse, std::error_code>
 {
-    sc::DRMRequest request { sc::drm_request::kGetPlanes };
-    sc::DRMResponse response {};
+    static std::size_t constexpr kMaxAttempts = 3;
 
-    auto const send_result = socket.use_with(
-        sc::MessageSender<sc::DRMRequest> { request, timeout, mask });
+    sc::framebuffer_descriptor descriptor;
+    sc::dmabuf_reply_message response {};
 
-    if (!send_result) {
-        return send_result.error();
+    for (std::size_t n = 0; n < kMaxAttempts; ++n) {
+
+        sc::DRMRequest request { sc::drm_request::kGetPlanes };
+        response = {};
+
+        auto const send_result = socket.use_with(
+            sc::MessageSender<sc::DRMRequest> { request, timeout, mask });
+
+        if (!send_result) {
+            return send_result.error();
+        }
+
+        if (sc::get_value(send_result) < sizeof(request)) {
+            return sc::result_error(
+                std::error_code { EAGAIN, std::system_category() });
+        }
+
+        auto const recv_result = socket.use_with(
+            sc::dmabuf_reply_message_receiver { response, timeout, mask });
+
+        if (!recv_result) {
+            return recv_result.error();
+        }
+
+        auto close_fds_guard = sc::ScopeGuard { [&] {
+            ::close(response.fb_fd);
+            ::close(response.sync_fd);
+        } };
+
+        if (sc::get_value(recv_result) < sizeof(response)) {
+            return sc::result_error(
+                std::error_code { EAGAIN, std::system_category() });
+        }
+
+        descriptor = sc::read_next_sequence(*shared_memory);
+
+        if (descriptor.fb_id == response.fb_id) {
+            close_fds_guard.deactivate();
+            break;
+        }
+
+        if ((n + 1) == kMaxAttempts) {
+            sc::log(sc::LogLevel::warn,
+                    "DRM buffer has changed since last response. Received %u, "
+                    "current %u",
+                    response.fb_id,
+                    descriptor.fb_id);
+        }
     }
 
-    if (sc::get_value(send_result) < sizeof(request)) {
-        return sc::result_error(
-            std::error_code { EAGAIN, std::system_category() });
-    }
+    sc::DRMResponse combined_response {};
+    combined_response.num_fds = 1;
+    combined_response.descriptors[0].fb_id = response.fb_id;
+    combined_response.descriptors[0].fd = response.fb_fd;
+    combined_response.descriptors[0].flags = descriptor.flags;
+    combined_response.descriptors[0].height = descriptor.height;
+    combined_response.descriptors[0].width = descriptor.width;
+    combined_response.descriptors[0].modifier = descriptor.modifier;
+    combined_response.descriptors[0].pixel_format = descriptor.pixel_format;
+    combined_response.descriptors[0].pitch = descriptor.pitch;
+    combined_response.descriptors[0].offset = descriptor.offset;
+    combined_response.descriptors[0].sync_fd = response.sync_fd;
+    combined_response.descriptors[0].phase_offset_nanoseconds =
+        response.phase_offset_nanoseconds;
 
-    auto const recv_result =
-        socket.use_with(sc::DRMResponseReceiver { response, timeout, mask });
-
-    if (!recv_result) {
-        return recv_result.error();
-    }
-
-    if (sc::get_value(recv_result) < sizeof(response)) {
-        return sc::result_error(
-            std::error_code { EAGAIN, std::system_category() });
-    }
-
-    return sc::result_ok(response);
+    return sc::result_ok(combined_response);
 }
 
 auto find_drm_helper_binary()
@@ -142,7 +196,8 @@ auto find_drm_helper_binary()
      */
     auto kms_bin_dir = fs::read_symlink("/proc/self/exe");
     kms_bin_dir.remove_filename();
-    auto kms_bin_path = kms_bin_dir / kDRMBin;
+    auto kms_bin_path = kms_bin_dir / "../toolbox" / "drm_planes";
+    // auto kms_bin_path = kms_bin_dir / kDRMBin;
     sc::log(sc::LogLevel::debug,
             "Checking for %s at %s",
             kDRMBin,
@@ -155,18 +210,18 @@ auto find_drm_helper_binary()
         return kms_bin_path;
     }
 
-    kms_bin_path = fs::path(sc::KLibExecDir) / kDRMBin;
-    sc::log(sc::LogLevel::debug,
-            "Checking for %s at %s",
-            kDRMBin,
-            kms_bin_path.c_str());
-    if (fs::exists(kms_bin_path)) {
-        sc::log(sc::LogLevel::debug,
-                "Found %s at %s",
-                kDRMBin,
-                kms_bin_path.c_str());
-        return kms_bin_path;
-    }
+    // kms_bin_path = fs::path(sc::KLibExecDir) / kDRMBin;
+    // sc::log(sc::LogLevel::debug,
+    //         "Checking for %s at %s",
+    //         kDRMBin,
+    //         kms_bin_path.c_str());
+    // if (fs::exists(kms_bin_path)) {
+    //     sc::log(sc::LogLevel::debug,
+    //             "Found %s at %s",
+    //             kDRMBin,
+    //             kms_bin_path.c_str());
+    //     return kms_bin_path;
+    // }
 
     throw new std::runtime_error { "Couldn't locate DRM helper" };
 }
@@ -234,9 +289,15 @@ struct SyncFence
 
     auto operator=(SyncFence&&) -> SyncFence& = delete;
 
-    operator bool() const noexcept { return fence_ != EGL_NO_SYNC; }
+    operator bool() const noexcept
+    {
+        return fence_ != EGL_NO_SYNC;
+    }
 
-    operator EGLSync() const noexcept { return fence_; }
+    operator EGLSync() const noexcept
+    {
+        return fence_;
+    }
 
 private:
     EGLDisplay display_;
@@ -286,7 +347,10 @@ auto DRMCudaCaptureSource::context() const noexcept -> exios::Context const&
     return ctx_;
 }
 
-auto DRMCudaCaptureSource::cancel() noexcept -> void { timer_.cancel(); }
+auto DRMCudaCaptureSource::cancel() noexcept -> void
+{
+    timer_.cancel();
+}
 
 auto DRMCudaCaptureSource::timer() noexcept -> StickyCancelTimer&
 {
@@ -325,7 +389,7 @@ auto DRMCudaCaptureSource::init() -> void
      */
     SC_SCOPE_GUARD([&] {
         server_socket.close();
-        unlink(kSocketPath);
+        // unlink(kSocketPath);
     });
 
     server_socket.listen();
@@ -333,7 +397,9 @@ auto DRMCudaCaptureSource::init() -> void
     /* Spawn the DRM child process and wait for it
      * to attach itself...
      */
-    std::vector<std::string> args { find_drm_helper_binary(), kSocketPath };
+    std::vector<std::string> args { find_drm_helper_binary(),
+                                    kSocketPath,
+                                    kSharedMemoryName };
     drm_process_ = sc::spawn_process(std::span { args.data(), args.size() });
     auto socket_result = server_socket.use_with(
         sc::AcceptHandler { kDRMConnectTimeoutMs, &drm_proc_mask_ });
@@ -343,82 +409,43 @@ auto DRMCudaCaptureSource::init() -> void
 
     drm_socket_ = UnixSocket { sc::get_value(socket_result) };
 
-    auto const r =
-        WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
-            return get_drm_data(
-                drm_socket_, kDRMDataTimeoutMs, &drm_proc_mask_);
-        });
-
-    if (!r) {
-        if (sc::get_error(r).value() == EINTR)
-            return;
-
-        throw std::system_error { r.error() };
-    }
-
-    auto const drm_data = sc::get_value(r);
-    if (!drm_data.num_fds)
-        throw std::runtime_error { "No DRM planes received" };
-
-    SC_SCOPE_GUARD([&] {
-        /* If we received any dma-buf fds then it is
-         * our responsibility to close them...
-         */
-        for (decltype(drm_data.num_fds) i = 0; i < drm_data.num_fds; ++i) {
-            ::close(drm_data.descriptors[i].fd);
-        }
-    });
-
-    auto begin_descriptors = std::begin(drm_data.descriptors);
-    auto end_descriptors =
-        std::next(std::begin(drm_data.descriptors), drm_data.num_fds);
-
-    auto const& descriptor = std::max_element(
-        begin_descriptors, end_descriptors, [](auto const& a, auto const& b) {
-            return (a.width * a.height) < (b.width * b.height);
-        });
-
-    auto const mouse_plane_position =
-        std::find_if(begin_descriptors, end_descriptors, [](auto const& plane) {
-            return plane.is_flag_set(sc::plane_flags::IS_CURSOR);
-        });
-
-    auto const has_mouse_plane = mouse_plane_position != end_descriptors;
-
-    ::close(descriptor->sync_fd);
-    if (has_mouse_plane) {
-        /* We don't care about explicit sync for the mouse pointer plane...
-         */
-        ::close(mouse_plane_position->sync_fd);
-    }
+    shared_memory_.emplace(
+        open_ipc_ptr<framebuffer_descriptor_sequence>(kSharedMemoryName));
 }
 
 auto DRMCudaCaptureSource::flush_stale_image_buffers() -> void
 {
-    for (auto pos = image_buffer_.rbegin(); pos != image_buffer_.rend();
-         ++pos) {
-        buf::Item& image = std::get<1>(*pos);
-        SC_EXPECT(image.used_on_frame_number <= frame_number_);
-        auto const unused_for = frame_number_ - image.used_on_frame_number;
-        if (unused_for >= kDRMImageIsStaleAfterFramesUnused) {
-            log(LogLevel::debug,
-                "Removing stale DRM image %u. Unused for %llu frames",
-                std::get<0>(*pos),
-                unused_for);
-            image_buffer_.erase(--(pos.base()));
-        }
-    };
+    using std::chrono::duration_cast;
+    using std::chrono::nanoseconds;
+    using std::chrono::seconds;
+
+    std::size_t const stale_after_frame = seconds(1) / frame_interval_;
+
+    /* We only flush the back item of the cache to keep this
+     * constant time
+     */
+
+    if (image_buffer_.size() == 0)
+        return;
+
+    auto pos = image_buffer_.rbegin();
+    buf::Item& image = std::get<1>(*pos);
+    SC_EXPECT(image.used_on_frame_number <= frame_number_);
+    auto const unused_for = frame_number_ - image.used_on_frame_number;
+    if (unused_for >= stale_after_frame) {
+        image_buffer_.erase(--(pos.base()));
+    }
 }
 
 auto DRMCudaCaptureSource::get_image_buffer(PlaneDescriptor const& descriptor)
     -> buf::Item&
 {
+    image_buffer_largest_size_ =
+        std::max(image_buffer_largest_size_, image_buffer_.size());
+    flush_stale_image_buffers();
+
     auto pos = image_buffer_.find(descriptor.fb_id);
     if (pos == image_buffer_.end()) {
-
-        image_buffer_largest_size_ =
-            std::max(image_buffer_largest_size_, image_buffer_.size());
-        flush_stale_image_buffers();
 
         // clang-format off
         std::intptr_t const img_attr[] = {
@@ -443,12 +470,8 @@ auto DRMCudaCaptureSource::get_image_buffer(PlaneDescriptor const& descriptor)
                                        std::to_string(egl().eglGetError()) };
         }
 
-        auto [item, inserted] =
-            image_buffer_.insert(descriptor.fb_id,
-                                 buf::Item { egl_display_,
-                                             image,
-                                             opengl::create<opengl::Texture>(),
-                                             frame_number_ });
+        auto [item, inserted] = image_buffer_.insert(
+            descriptor.fb_id, buf::Item { egl_display_, image, frame_number_ });
         SC_EXPECT(inserted);
         pos = item;
     }
@@ -477,7 +500,10 @@ auto DRMCudaCaptureSource::deinit() -> void
 auto DRMCudaCaptureSource::capture_(
     AVFrame* frame,
     frame_timer /*frame_budget*/,
-    auto (*completion)(DRMCudaCaptureSource&, AVFrame*, void*)->void,
+    auto (*completion)(DRMCudaCaptureSource&,
+                       std::variant<AVFrame*, frame_capture_out_of_phase_error>,
+                       void*)
+        ->void,
     void* data) -> void
 {
     /* WARN:
@@ -488,8 +514,10 @@ auto DRMCudaCaptureSource::capture_(
 
     auto const r =
         WITH_PROFILE(metrics::ProfileSectionId::wayland_fetch_drm_data, [&] {
-            return get_drm_data(
-                drm_socket_, kDRMDataTimeoutMs, &drm_proc_mask_);
+            return get_drm_data(drm_socket_,
+                                *shared_memory_,
+                                kDRMDataTimeoutMs,
+                                &drm_proc_mask_);
         });
 
     if (!r) {
@@ -536,7 +564,37 @@ auto DRMCudaCaptureSource::capture_(
         ::close(mouse_plane_position->sync_fd);
     }
 
+    auto const offset = descriptor->phase_offset_nanoseconds;
+    auto const offset_factor =
+        static_cast<float>(offset) /
+        std::chrono::duration_cast<std::chrono::nanoseconds>(frame_interval_)
+            .count();
+    bool const out_of_phase = offset_factor >= kPhaseDriftErrorThreshold;
+
+    /* There isn't much point in reporting more than one consecutive
+     * out-of-phase error. If we're still out-of-phase on the second attempt
+     * then we may as well just capture; We're going to be capturing one
+     * frame behind anyway, so there's no point it asking upstream to
+     * correct us any further...
+     */
+    if (std::exchange(consecutive_out_of_phase_count_, 0) == 0 &&
+        out_of_phase) {
+
+        consecutive_out_of_phase_count_ += 1;
+        completion(*this,
+                   frame_capture_out_of_phase_error { .phase_offset = offset },
+                   data);
+        return;
+    }
+
     buf::Item& image = get_image_buffer(*descriptor);
+
+    opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
+                 color_converter_.input_texture(),
+                 [&](auto) {
+                     gl().glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES,
+                                                       image.image);
+                 });
 
     std::optional<MouseParameters> mouse_params {};
 
@@ -592,9 +650,8 @@ auto DRMCudaCaptureSource::capture_(
         }
     }
 
-    WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion, [&] {
-        color_converter_.convert(image.texture, mouse_params);
-    });
+    WITH_PROFILE(metrics::ProfileSectionId::opengl_color_conversion,
+                 [&] { color_converter_.convert(mouse_params); });
 
     /* Ensure all the rendering commands have completed, otherwise we
      * risk copying an old frame.

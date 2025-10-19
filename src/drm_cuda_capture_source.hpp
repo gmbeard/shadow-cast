@@ -7,10 +7,13 @@
 #include "cuda.hpp"
 #include "drm/planes.hpp"
 #include "exios/context.hpp"
+#include "frame_capture.hpp"
 #include "frame_timer.hpp"
+#include "framebuffer_descriptor.hpp"
 #include "gl/texture.hpp"
 #include "io/process.hpp"
 #include "io/unix_socket.hpp"
+#include "ipc_ptr.hpp"
 #include "lru_map.hpp"
 #include "nvidia/cuda.hpp"
 #include "platform/egl.hpp"
@@ -20,8 +23,11 @@
 #include <EGL/egl.h>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <sys/types.h>
 #include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace sc
 {
@@ -100,27 +106,16 @@ namespace buf
 {
 struct Item
 {
-    Item(EGLDisplay disp,
-         EGLImage img,
-         opengl::Texture tex,
-         std::size_t frame_number) noexcept
+    Item(EGLDisplay disp, EGLImage img, std::size_t frame_number) noexcept
         : display { std::move(disp) }
         , image { std::move(img) }
-        , texture { std::move(tex) }
         , used_on_frame_number { frame_number }
     {
-        opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
-                     texture,
-                     [&](auto) {
-                         gl().glEGLImageTargetTexture2DOES(
-                             GL_TEXTURE_EXTERNAL_OES, image);
-                     });
     }
 
     Item(Item&& other) noexcept
         : display { other.display }
         , image { std::exchange(other.image, EGL_NO_IMAGE) }
-        , texture { std::move(other.texture) }
         , used_on_frame_number { other.used_on_frame_number }
     {
     }
@@ -136,7 +131,6 @@ struct Item
         using std::swap;
         swap(lhs.display, rhs.display);
         swap(lhs.image, rhs.image);
-        swap(lhs.texture, rhs.texture);
         swap(lhs.used_on_frame_number, rhs.used_on_frame_number);
     }
 
@@ -149,7 +143,6 @@ struct Item
 
     EGLDisplay display;
     EGLImage image;
-    opengl::Texture texture;
     std::size_t used_on_frame_number;
 };
 
@@ -157,7 +150,7 @@ struct Item
 
 struct DRMCudaCaptureSource
 {
-    using CaptureResultType = exios::Result<AVFrame*, std::error_code>;
+    using CaptureResultType = exios::Result<AVFrame*, frame_capture_error>;
 
     DRMCudaCaptureSource(exios::Context context,
                          Parameters const& params,
@@ -198,25 +191,37 @@ private:
     auto flush_stale_image_buffers() -> void;
 
     template <CaptureCompletion<CaptureResultType> Completion>
-    static auto completion_proxy_(DRMCudaCaptureSource& self,
-                                  AVFrame* frame,
-                                  void* data) -> void
+    static auto completion_proxy_(
+        DRMCudaCaptureSource& self,
+        std::variant<AVFrame*, frame_capture_out_of_phase_error> result,
+        void* data) -> void
     {
         auto& completion = *reinterpret_cast<Completion*>(data);
         auto const alloc = exios::select_allocator(completion);
-        auto fn = [frame, completion = std::move(completion)]() mutable {
-            std::move(completion)(
-                CaptureResultType { exios::result_ok(frame) });
+        auto fn = [result = std::move(result),
+                   completion = std::move(completion)]() mutable {
+            if (std::holds_alternative<frame_capture_out_of_phase_error>(
+                    result)) {
+                std::move(completion)(CaptureResultType { exios::result_error(
+                    std::get<frame_capture_out_of_phase_error>(result)) });
+            }
+            else {
+                std::move(completion)(CaptureResultType {
+                    exios::result_ok(std::get<AVFrame*>(result)) });
+            }
         };
 
         self.ctx_.post(std::move(fn), alloc);
     }
 
-    auto
-    capture_(AVFrame* frame,
-             frame_timer frame_budget,
-             auto (*completion)(DRMCudaCaptureSource&, AVFrame*, void*)->void,
-             void* data) -> void;
+    auto capture_(AVFrame* frame,
+                  frame_timer frame_budget,
+                  auto (*completion)(
+                      DRMCudaCaptureSource&,
+                      std::variant<AVFrame*, frame_capture_out_of_phase_error>,
+                      void*)
+                      ->void,
+                  void* data) -> void;
 
     exios::Context ctx_;
     StickyCancelTimer timer_;
@@ -232,6 +237,8 @@ private:
     lru_map<std::uint32_t, buf::Item> image_buffer_;
     std::size_t image_buffer_cache_hits_ { 0 };
     std::size_t image_buffer_largest_size_ { 0 };
+    std::optional<ipc_ptr<framebuffer_descriptor_sequence>> shared_memory_ {};
+    std::size_t consecutive_out_of_phase_count_ { 0 };
 };
 
 } // namespace sc

@@ -94,6 +94,20 @@ auto frame_timer::duration_until_next_frame_from(
     return next_frame_time - current_time;
 }
 
+auto frame_timer::add_offset(
+    std::chrono::duration<clock_type::rep, clock_type::period> const&
+        offset) noexcept -> void
+{
+    start_time_ += offset;
+}
+
+auto frame_timer::subtract_offset(
+    std::chrono::duration<clock_type::rep, clock_type::period> const&
+        offset) noexcept -> void
+{
+    start_time_ -= offset;
+}
+
 auto frame_timer::now() noexcept -> std::chrono::time_point<clock_type>
 {
     return clock_type::now();

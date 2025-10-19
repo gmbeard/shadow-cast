@@ -30,6 +30,9 @@ auto create_socket(std::string_view path, F&& on_create)
     if (path.size() > std::size(addr.sun_path))
         throw std::runtime_error { "create_socket(): path too long" };
 
+    path.copy(addr.sun_path + 1, path.size());
+    addr.sun_path[0] = '\0';
+
     auto&& result = on_create(fd, addr);
     close_guard.deactivate();
     return result;
@@ -50,7 +53,10 @@ UnixSocket::UnixSocket(int fd) noexcept
 {
 }
 
-UnixSocket::~UnixSocket() { close(); }
+UnixSocket::~UnixSocket()
+{
+    close();
+}
 
 auto UnixSocket::operator=(UnixSocket&& other) noexcept -> UnixSocket&
 {
@@ -61,7 +67,10 @@ auto UnixSocket::operator=(UnixSocket&& other) noexcept -> UnixSocket&
     return *this;
 }
 
-auto UnixSocket::close() noexcept -> int { return ::close(fd_); }
+auto UnixSocket::close() noexcept -> int
+{
+    return ::close(fd_);
+}
 
 auto UnixSocket::accept() -> UnixSocket
 {
@@ -82,7 +91,10 @@ auto UnixSocket::listen() -> void
                                    std::strerror(errno) };
 }
 
-auto UnixSocket::fd() const noexcept -> int { return fd_; }
+auto UnixSocket::fd() const noexcept -> int
+{
+    return fd_;
+}
 
 auto swap(UnixSocket& lhs, UnixSocket& rhs) noexcept -> void
 {
@@ -96,9 +108,9 @@ namespace socket
 auto bind(std::string_view path) -> UnixSocket
 {
     return create_socket(path, [&](int fd, sockaddr_un addr) {
-        if (auto const result = bind(fd,
-                                     reinterpret_cast<sockaddr*>(&addr),
-                                     sizeof(addr.sun_family) + path.size());
+        std::size_t len = offsetof(sockaddr_un, sun_path) + 1 + path.size();
+        if (auto const result =
+                bind(fd, reinterpret_cast<sockaddr*>(&addr), len);
             result < 0)
             throw std::logic_error { "bind(): "s + std::strerror(errno) };
 
@@ -109,9 +121,9 @@ auto bind(std::string_view path) -> UnixSocket
 auto connect(std::string_view path) -> UnixSocket
 {
     return create_socket(path, [&](int fd, sockaddr_un addr) {
-        if (auto const result = connect(fd,
-                                        reinterpret_cast<sockaddr*>(&addr),
-                                        sizeof(addr.sun_family) + path.size());
+        std::size_t len = offsetof(sockaddr_un, sun_path) + 1 + path.size();
+        if (auto const result =
+                connect(fd, reinterpret_cast<sockaddr*>(&addr), len);
             result < 0)
             throw std::logic_error { "connect(): "s + std::strerror(errno) };
 

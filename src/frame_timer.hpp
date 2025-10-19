@@ -34,6 +34,12 @@ struct frame_timer
         std::chrono::time_point<clock_type> const& current_time) const noexcept
         -> std::chrono::duration<clock_type::rep, clock_type::period>;
 
+    auto
+    add_offset(std::chrono::duration<clock_type::rep, clock_type::period> const&
+                   offset) noexcept -> void;
+    auto subtract_offset(
+        std::chrono::duration<clock_type::rep, clock_type::period> const&
+            offset) noexcept -> void;
     static auto now() noexcept -> std::chrono::time_point<clock_type>;
 
     auto operator++() noexcept -> frame_timer&;

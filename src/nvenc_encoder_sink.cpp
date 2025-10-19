@@ -4,7 +4,9 @@
 #include "cuda.hpp"
 #include "logging.hpp"
 #include "utils/cmd_line.hpp"
+#include "utils/contracts.hpp"
 #include <cstdint>
+#include <libavutil/frame.h>
 extern "C" {
 #include <libavcodec/codec.h>
 #include <libavutil/avutil.h>
@@ -179,6 +181,12 @@ NvencEncoderSink::NvencEncoderSink(exios::Context ctx,
     , frame_ { av_frame_alloc() }
 {
     container_.add_stream(encoder_context_.get());
+}
+
+auto NvencEncoderSink::discard(input_type input) noexcept -> void
+{
+    SC_EXPECT(input == frame_.get());
+    av_frame_unref(input);
 }
 
 auto NvencEncoderSink::prepare() -> input_type

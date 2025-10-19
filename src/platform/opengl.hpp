@@ -133,6 +133,9 @@ struct OpenGL
      */
     void (*glEGLImageTargetTexture2DOES)(GLenum target, void* image) =
         SAFE_EMPTY_FUNCTION_POINTER(glEGLImageTargetTexture2DOES);
+    GLsync (*glFenceSync)(GLenum condition, GLbitfield flags);
+    void (*glDeleteSync)(GLsync sync);
+    GLenum (*glClientWaitSync)(GLsync sync, GLbitfield flags, GLuint64 timeout);
 };
 
 namespace detail

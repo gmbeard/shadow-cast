@@ -85,6 +85,9 @@ auto load_opengl() -> OpenGL
     TRY_ATTACH_SYMBOL(&opengl.glGetString, "glGetString", lib);
     TRY_ATTACH_SYMBOL(&opengl.glFlush, "glFlush", lib);
     TRY_ATTACH_SYMBOL(&opengl.glFinish, "glFinish", lib);
+    TRY_ATTACH_SYMBOL(&opengl.glFenceSync, "glFenceSync", lib);
+    TRY_ATTACH_SYMBOL(&opengl.glDeleteSync, "glDeleteSync", lib);
+    TRY_ATTACH_SYMBOL(&opengl.glClientWaitSync, "glClientWaitSync", lib);
 
     return opengl;
 }
@@ -100,5 +103,8 @@ auto get_opengl_module() -> OpenGL&
 
 } // namespace detail
 
-auto gl() -> OpenGL const& { return detail::get_opengl_module(); }
+auto gl() -> OpenGL const&
+{
+    return detail::get_opengl_module();
+}
 } // namespace sc

@@ -83,4 +83,36 @@ auto DRMResponseReceiveHandler::operator()(int fd,
     return res;
 }
 
+auto dmabuf_reply_message_receive_handler::operator()(
+    int fd, msghdr& msg, dmabuf_reply_message& response) noexcept -> ssize_t
+{
+    /* Here, we pluck the file descriptors from the control
+     * message and update the response message payload
+     */
+
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * kMaxPlaneDescriptors)] {};
+    msg.msg_control = cmsgbuf;
+    msg.msg_controllen = sizeof(cmsgbuf);
+
+    int res = ::recvmsg(fd, &msg, MSG_WAITALL);
+    if (res <= 0)
+        return res;
+
+    if (response.fd_and_sync_pair_count == 0) {
+        return res;
+    }
+
+    cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    std::span<int> fds { reinterpret_cast<int*>(CMSG_DATA(cmsg)),
+                         response.fd_and_sync_pair_count *
+                             response.fd_and_sync_stride };
+
+    SC_EXPECT(response.fd_and_sync_pair_count * response.fd_and_sync_stride <=
+              fds.size());
+    response.fb_fd = fds[0];
+    response.sync_fd = fds[1];
+
+    return res;
+}
+
 } // namespace sc

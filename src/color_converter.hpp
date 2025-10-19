@@ -26,13 +26,14 @@ struct ColorConverter
                    float scale_height = 1.f) noexcept;
 
     auto initialize() -> void;
+    [[nodiscard]] auto input_texture() noexcept -> opengl::Texture&;
     [[nodiscard]] auto mouse_texture() noexcept -> opengl::Texture&;
     [[nodiscard]] auto output_texture() noexcept -> opengl::Texture&;
-    auto convert(opengl::Texture& screen_texture,
-                 std::optional<MouseParameters> mouse_params) -> void;
+    auto convert(std::optional<MouseParameters> mouse_params) -> void;
 
 private:
     opengl::Framebuffer fbo_;
+    opengl::Texture input_texture_;
     opengl::Texture mouse_texture_;
     opengl::Texture output_texture_;
     opengl::VertexArray vao_;

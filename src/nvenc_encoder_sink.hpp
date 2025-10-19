@@ -34,6 +34,7 @@ struct NvencEncoderSink
     using completion_result_type = exios::Result<std::error_code>;
 
     auto prepare() -> input_type;
+    auto discard(input_type input) noexcept -> void;
 
     template <AddToSinkCompletion<completion_result_type> Completion>
     auto write(input_type input, Completion&& completion) -> void

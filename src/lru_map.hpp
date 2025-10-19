@@ -51,7 +51,7 @@ struct lru_map
             return std::make_pair(position, false);
         }
 
-        if (history_.size() == max_size_) {
+        if (history_.size() == max_size_ && history_.size() > 0) {
             auto& last = history_.back();
             SC_EXPECT(index_.erase(std::get<0>(last)) == 1);
             history_.pop_back();
@@ -78,22 +78,46 @@ struct lru_map
         size_ -= 1;
     }
 
-    auto capacity() const noexcept -> std::size_t { return max_size_; }
-    auto size() const noexcept -> std::size_t { return size_; }
-    auto begin() const noexcept -> const_iterator { return history_.begin(); }
+    auto capacity() const noexcept -> std::size_t
+    {
+        return max_size_;
+    }
+    auto size() const noexcept -> std::size_t
+    {
+        return size_;
+    }
+    auto begin() const noexcept -> const_iterator
+    {
+        return history_.begin();
+    }
     auto rbegin() const noexcept -> const_reverse_iterator
     {
         return history_.rbegin();
     }
-    auto end() const noexcept -> const_iterator { return history_.end(); }
+    auto end() const noexcept -> const_iterator
+    {
+        return history_.end();
+    }
     auto rend() const noexcept -> const_reverse_iterator
     {
         return history_.rend();
     }
-    auto begin() noexcept -> iterator { return history_.begin(); }
-    auto rbegin() noexcept -> reverse_iterator { return history_.rbegin(); }
-    auto end() noexcept -> iterator { return history_.end(); }
-    auto rend() noexcept -> reverse_iterator { return history_.rend(); }
+    auto begin() noexcept -> iterator
+    {
+        return history_.begin();
+    }
+    auto rbegin() noexcept -> reverse_iterator
+    {
+        return history_.rbegin();
+    }
+    auto end() noexcept -> iterator
+    {
+        return history_.end();
+    }
+    auto rend() noexcept -> reverse_iterator
+    {
+        return history_.rend();
+    }
 
 private:
     auto move_to_front(typename index_type::iterator pos) -> iterator

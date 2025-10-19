@@ -1,8 +1,10 @@
 #ifndef SHADOW_CAST_DRM_MESSAGING_HPP_INCLUDED
 #define SHADOW_CAST_DRM_MESSAGING_HPP_INCLUDED
 
+#include "drm/dmabuf_reply_message.hpp"
 #include "drm/planes.hpp"
 #include "io/message_handler.hpp"
+#include <sys/socket.h>
 
 namespace sc
 {
@@ -37,11 +39,21 @@ struct DRMResponseReceiveHandler
     auto operator()(int, msghdr&, DRMResponse&) noexcept -> ssize_t;
 };
 
+struct dmabuf_reply_message_receive_handler
+{
+    auto operator()(int, msghdr&, dmabuf_reply_message&) noexcept -> ssize_t;
+};
+
 using DRMResponseSender =
     MessageHandler<DRMResponse, DRMResponseSendHandler, decltype(io::write)>;
 
 using DRMResponseReceiver =
     MessageHandler<DRMResponse, DRMResponseReceiveHandler, decltype(io::write)>;
+
+using dmabuf_reply_message_receiver =
+    MessageHandler<dmabuf_reply_message,
+                   dmabuf_reply_message_receive_handler,
+                   decltype(io::write)>;
 
 } // namespace sc
 
