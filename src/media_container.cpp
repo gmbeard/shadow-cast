@@ -10,6 +10,8 @@
 #include <libavutil/avutil.h>
 #include <span>
 
+std::size_t constexpr kMaxConsecutivePacketWriteFailures = 10;
+
 namespace sc
 {
 
@@ -196,6 +198,8 @@ auto MediaContainer::flush() -> void
 
 auto MediaContainer::queue_processor_(MediaContainer& self) -> void
 {
+    [[maybe_unused]] std::size_t consecutive_write_errors = 0;
+
     while (self.queue_processor_running_) {
 
         auto* queue_item = self.output_queue_.dequeue();
@@ -205,9 +209,27 @@ auto MediaContainer::queue_processor_(MediaContainer& self) -> void
             av_interleaved_write_frame(self.ctx_.get(), queue_item->packet);
 
         if (response < 0) {
+#if 1
             throw std::runtime_error { "write packet error: " +
                                        sc::av_error_to_string(response) };
+#else
+            consecutive_write_errors += 1;
+
+            if (consecutive_write_errors >=
+                kMaxConsecutivePacketWriteFailures) {
+                throw std::runtime_error { "write packet error: " +
+                                           sc::av_error_to_string(response) };
+            }
+
+            log(LogLevel::warn,
+                "Write packet error: %s",
+                sc::av_error_to_string(response).c_str());
+        }
+        else {
+            consecutive_write_errors = 0;
+#endif
         }
     }
 }
+
 } // namespace sc
