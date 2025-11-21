@@ -106,7 +106,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* Audio encoder...
      */
     { .short_name = 'A',
-      .long_name = "--audio-encoder",
+      .long_name = "audio-encoder",
       .option = sc::CmdLineOption::audio_encoder,
       .flags = sc::cmdline::VALUE_REQUIRED,
       .validation = sc::no_validation,
@@ -115,7 +115,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* Bit rate...
      */
     { .short_name = 'b',
-      .long_name = "--bitrate",
+      .long_name = "bitrate",
       .option = sc::CmdLineOption::bit_rate,
       .flags = sc::cmdline::VALUE_REQUIRED,
       .validation =
@@ -128,7 +128,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* Frame rate...
      */
     { .short_name = 'f',
-      .long_name = "--framerate",
+      .long_name = "framerate",
       .option = sc::CmdLineOption::frame_rate,
       .flags = sc::cmdline::VALUE_NUMERIC,
       .validation = sc::no_validation,
@@ -140,7 +140,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
      */
     {
         .short_name = 'h',
-        .long_name = "--help",
+        .long_name = "help",
         .option = sc::CmdLineOption::help,
         .flags = 0,
         .validation = sc::no_validation,
@@ -151,7 +151,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
      */
     {
         .short_name = 'q',
-        .long_name = "--quality",
+        .long_name = "quality",
         .option = sc::CmdLineOption::quality,
         .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
         .validation = sc::ValidRange { 1, 10 },
@@ -164,7 +164,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* Capture resolution...
      */
     { .short_name = 'r',
-      .long_name = "--resolution",
+      .long_name = "resolution",
       .option = sc::CmdLineOption::resolution,
       .flags = sc::cmdline::VALUE_REQUIRED,
       .validation =
@@ -180,7 +180,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
      */
     {
         .short_name = 's',
-        .long_name = "--sample-rate",
+        .long_name = "sample-rate",
         .option = sc::CmdLineOption::sample_rate,
         .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
         .validation = sc::ValidRange { 8'000, 48'000 },
@@ -192,7 +192,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
      */
     {
         .short_name = 'v',
-        .long_name = "--version",
+        .long_name = "version",
         .option = sc::CmdLineOption::version,
         .flags = 0,
         .validation = sc::no_validation,
@@ -203,7 +203,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
      */
     {
         .short_name = 'V',
-        .long_name = "--video-encoder",
+        .long_name = "video-encoder",
         .option = sc::CmdLineOption::video_encoder,
         .flags = sc::cmdline::VALUE_REQUIRED,
         .validation =
@@ -214,21 +214,40 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
     /* DRM cache size...
      */
     { .short_name = 'C',
-      .long_name = "--drm-cache-size",
+      .long_name = "drm-cache-size",
       .option = sc::CmdLineOption::drm_cache_size,
       .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
       .validation = sc::ValidRange { 1, 20 },
       .description =
           "Max. number of DRM images to cache. Default 10. (Wayland only)" },
-};
 
-auto parse_long_option(std::string_view key, auto first, auto /*last*/)
-    -> std::pair<sc::CmdLineOptionValue, decltype(first)>
-{
-    /* TODO:
+    /* VBV size...
      */
-    throw std::runtime_error { "Unknown option: "s + std::string { key } };
-}
+    { .short_name = 0,
+      .long_name = "vbv-size",
+      .option = sc::CmdLineOption::vbv_size,
+      .flags = sc::cmdline::VALUE_REQUIRED,
+      .validation =
+          [](std::string_view val) {
+              std::size_t bitrate;
+              return get_bitrate(val, bitrate);
+          },
+      .description =
+          "VBV size. Larger sizes help to bettern constrain the bitrate. "
+          "For CBR the default is 1X bitrate. For VBR the default is 2X "
+          "bitrate." },
+
+    /* Rate control look-ahead...
+     */
+    { .short_name = 0,
+      .long_name = "rc-lookahead",
+      .option = sc::CmdLineOption::rc_lookahead,
+      .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
+      .validation = sc::ValidRange { 0, 58 },
+      .description =
+          "Rate control look-ahead delay. Higher values help to maintain "
+          "bitrate accuracy. Defaults to 1/2 the framerate." },
+};
 
 template <typename T>
 struct Validator
@@ -313,6 +332,29 @@ auto check_valid_value(T const& val, sc::CmdLineOptionSpec const& spec)
     std::visit(Validator { val }, spec.validation);
 
     return std::string { val };
+}
+
+auto parse_long_option(std::string_view key, auto first, auto last)
+    -> std::pair<sc::CmdLineOptionValue, decltype(first)>
+{
+    auto spec_pos =
+        std::find_if(std::begin(cmd_line_spec),
+                     std::end(cmd_line_spec),
+                     [&](auto const& spec) { return spec.long_name == key; });
+
+    if (spec_pos == std::end(cmd_line_spec))
+        throw std::runtime_error { "Unknown option: --"s + std::string(key) };
+
+    if (!spec_pos->flags)
+        return { { spec_pos->option, spec_pos->flags, {} }, first };
+
+    if ((spec_pos->flags & sc::cmdline::VALUE_REQUIRED) && first == last)
+        throw std::runtime_error { "Missing argument: --"s + std::string(key) };
+
+    return { { spec_pos->option,
+               spec_pos->flags,
+               check_valid_value(*first, *spec_pos) },
+             first == last ? first : std::next(first) };
 }
 
 auto parse_short_option(std::string_view key, auto first, auto last)
@@ -401,7 +443,10 @@ auto operator<<(Out& out, Wrapped const& wrapped) -> Out&
 
 namespace sc
 {
-auto CmdLine::args() const noexcept -> decltype(args_) const& { return args_; }
+auto CmdLine::args() const noexcept -> decltype(args_) const&
+{
+    return args_;
+}
 
 auto CmdLine::has_option(CmdLineOption opt) const noexcept -> bool
 {
@@ -535,6 +580,16 @@ auto get_parameters(CmdLine const& cmdline) noexcept
         params.bitrate = bitrate;
     }
 
+    if (cmdline.has_option(CmdLineOption::vbv_size)) {
+        params.vbv_size =
+            cmdline.get_option_value(CmdLineOption::vbv_size, number_value);
+    }
+
+    if (cmdline.has_option(CmdLineOption::rc_lookahead)) {
+        params.rc_lookahead =
+            cmdline.get_option_value(CmdLineOption::rc_lookahead, number_value);
+    }
+
     if (!params.output_file.size())
         return CmdLineError { CmdLineError::error,
                               "Missing parameter: output file" };
@@ -560,6 +615,9 @@ auto output_help() -> void
     std::cerr << '\n';
 }
 
-auto output_version() -> void { std::cerr << kShadowCastVersion << '\n'; }
+auto output_version() -> void
+{
+    std::cerr << kShadowCastVersion << '\n';
+}
 
 } // namespace sc

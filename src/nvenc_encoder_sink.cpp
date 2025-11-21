@@ -5,6 +5,7 @@
 #include "logging.hpp"
 #include "utils/cmd_line.hpp"
 #include "utils/contracts.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <libavutil/frame.h>
 extern "C" {
@@ -18,6 +19,9 @@ extern "C" {
 
 namespace
 {
+
+std::size_t constexpr kMinRateControlBufferSize = 5'000'000lu;
+int constexpr kMaxNvencLookahead = 58;
 
 auto convert_quality_to_cq(std::int32_t setting) -> int
 {
@@ -74,7 +78,14 @@ auto create_encoder_context(sc::Parameters const& params,
     video_encoder_context->pix_fmt = AV_PIX_FMT_CUDA;
     video_encoder_context->bit_rate = params.bitrate;
     if (params.bitrate) {
-        video_encoder_context->rc_buffer_size = params.bitrate;
+        video_encoder_context->rc_buffer_size =
+            std::max(params.vbv_size ? params.vbv_size.value() : params.bitrate,
+                     kMinRateControlBufferSize);
+    }
+    else {
+        video_encoder_context->rc_buffer_size = std::max(
+            params.vbv_size ? params.vbv_size.value() : params.bitrate * 2,
+            kMinRateControlBufferSize);
     }
     video_encoder_context->gop_size = framerate.num * 2;
     video_encoder_context->max_b_frames = 0;
@@ -153,6 +164,15 @@ auto create_encoder_context(sc::Parameters const& params,
                 params.bitrate);
         av_dict_set(&options, "rc", "cbr", 0);
     }
+
+    av_dict_set_int(
+        &options,
+        "rc-lookahead",
+        std::min(kMaxNvencLookahead,
+                 params.rc_lookahead
+                     ? params.rc_lookahead.value()
+                     : static_cast<int>(params.frame_time.fps() / 2)),
+        0);
 
     if (auto const ret = avcodec_open2(
             video_encoder_context.get(), video_encoder.get(), &options);

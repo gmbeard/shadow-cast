@@ -29,7 +29,7 @@ enum ValueFlags : std::uint32_t
 
     VALUE_NUMERIC = 4,
 };
-}
+} // namespace cmdline
 
 enum class CmdLineOption
 {
@@ -43,6 +43,8 @@ enum class CmdLineOption
     version,
     video_encoder,
     drm_cache_size,
+    vbv_size,
+    rc_lookahead
 };
 
 enum class CaptureQuality
@@ -72,6 +74,8 @@ struct Parameters
     std::int32_t quality { 7 };
     std::size_t bitrate { 0 };
     std::int32_t drm_cache_size { 10 };
+    std::optional<std::int32_t> vbv_size { std::nullopt };
+    std::optional<std::int32_t> rc_lookahead { std::nullopt };
 };
 
 struct NoValidation
@@ -148,8 +152,7 @@ public:
     auto get_option_value(CmdLineOption opt) const noexcept -> std::string_view;
 
     template <OptionDataType T = StringValue>
-    decltype(auto) get_option_value(CmdLineOption opt,
-                                    T dt = string_value) const
+    decltype(auto) get_option_value(CmdLineOption opt, T dt = T {}) const
         noexcept(std::is_same_v<T, StringValue>)
     {
         return get_option_value_dispatch(opt, dt);
