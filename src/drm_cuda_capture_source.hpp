@@ -152,12 +152,14 @@ struct DRMCudaCaptureSource
 {
     using CaptureResultType = exios::Result<AVFrame*, frame_capture_error>;
 
-    DRMCudaCaptureSource(exios::Context context,
-                         Parameters const& params,
-                         VideoOutputSize output_size,
-                         VideoOutputScale output_scale,
-                         CUcontext cuda_ctx,
-                         EGLDisplay egl_display) noexcept;
+    DRMCudaCaptureSource(
+        exios::Context context,
+        Parameters const& params,
+        VideoOutputSize output_size,
+        VideoOutputScale output_scale,
+        CUcontext cuda_ctx,
+        EGLDisplay egl_display,
+        std::optional<float> const& phase_drift_threshold) noexcept;
 
     DRMCudaCaptureSource(DRMCudaCaptureSource&&) noexcept = default;
 
@@ -187,6 +189,7 @@ struct DRMCudaCaptureSource
     }
 
 private:
+    auto create_image(PlaneDescriptor const& descriptor) -> buf::Item;
     auto get_image_buffer(PlaneDescriptor const& descriptor) -> buf::Item&;
     auto flush_stale_image_buffers() -> void;
 
@@ -228,6 +231,7 @@ private:
     std::chrono::nanoseconds frame_interval_;
     CUcontext cuda_ctx_;
     EGLDisplay egl_display_;
+    float phase_drift_threshold_;
     std::size_t frame_number_ { 0 };
     sigset_t drm_proc_mask_ {};
     Process drm_process_;

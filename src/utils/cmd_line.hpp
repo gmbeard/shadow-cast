@@ -44,7 +44,8 @@ enum class CmdLineOption
     video_encoder,
     drm_cache_size,
     vbv_size,
-    rc_lookahead
+    rc_lookahead,
+    phase_drift_threshold,
 };
 
 enum class CaptureQuality
@@ -73,9 +74,10 @@ struct Parameters
     std::optional<CaptureResolution> resolution { std::nullopt };
     std::int32_t quality { 7 };
     std::size_t bitrate { 0 };
-    std::int32_t drm_cache_size { 10 };
+    std::int32_t drm_cache_size { 0 };
     std::optional<std::int32_t> vbv_size { std::nullopt };
     std::optional<std::int32_t> rc_lookahead { std::nullopt };
+    std::optional<float> phase_drift_threshold { std::nullopt };
 };
 
 struct NoValidation

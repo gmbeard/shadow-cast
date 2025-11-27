@@ -30,6 +30,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <optional>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -323,17 +324,22 @@ private:
 namespace sc
 {
 
-DRMCudaCaptureSource::DRMCudaCaptureSource(exios::Context context,
-                                           Parameters const& params,
-                                           VideoOutputSize output_size,
-                                           VideoOutputScale output_scale,
-                                           CUcontext cuda_ctx,
-                                           EGLDisplay egl_display) noexcept
+DRMCudaCaptureSource::DRMCudaCaptureSource(
+    exios::Context context,
+    Parameters const& params,
+    VideoOutputSize output_size,
+    VideoOutputScale output_scale,
+    CUcontext cuda_ctx,
+    EGLDisplay egl_display,
+    std::optional<float> const& phase_drift_threshold) noexcept
     : ctx_ { context }
     , timer_ { context }
     , frame_interval_ { params.frame_time.value() }
     , cuda_ctx_ { cuda_ctx }
     , egl_display_ { std::move(egl_display) }
+    , phase_drift_threshold_ { phase_drift_threshold.has_value()
+                                   ? *phase_drift_threshold
+                                   : kPhaseDriftErrorThreshold }
     , color_converter_ { output_size.width,
                          output_size.height,
                          output_scale.width,
@@ -369,6 +375,9 @@ auto DRMCudaCaptureSource::init() -> void
      */
     sigemptyset(&drm_proc_mask_);
     sigaddset(&drm_proc_mask_, SIGCHLD);
+    log(LogLevel::info,
+        "Framerate phase drift threshold: %3.2f",
+        phase_drift_threshold_);
 
     color_converter_.initialize();
 
@@ -437,6 +446,35 @@ auto DRMCudaCaptureSource::flush_stale_image_buffers() -> void
     }
 }
 
+auto DRMCudaCaptureSource::create_image(PlaneDescriptor const& descriptor)
+    -> buf::Item
+{
+    // clang-format off
+    std::intptr_t const img_attr[] = {
+        EGL_LINUX_DRM_FOURCC_EXT, descriptor.pixel_format,
+        EGL_WIDTH, descriptor.width,
+        EGL_HEIGHT, descriptor.height,
+        EGL_DMA_BUF_PLANE0_FD_EXT, descriptor.fd,
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT, descriptor.offset,
+        EGL_DMA_BUF_PLANE0_PITCH_EXT, descriptor.pitch,
+        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, static_cast<std::uint32_t>(descriptor.modifier & 0xffffffffull),
+        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, static_cast<std::uint32_t>(descriptor.modifier >> 32ull),
+        EGL_NONE
+    };
+    // clang-format on
+    auto image = egl().eglCreateImage(egl_display_,
+                                      EGL_NO_CONTEXT,
+                                      EGL_LINUX_DMA_BUF_EXT,
+                                      static_cast<EGLClientBuffer>(nullptr),
+                                      img_attr);
+    if (image == EGL_NO_IMAGE) {
+        throw std::runtime_error { "eglCreateImage input failed: " +
+                                   std::to_string(egl().eglGetError()) };
+    }
+
+    return buf::Item { egl_display_, image, frame_number_ };
+}
+
 auto DRMCudaCaptureSource::get_image_buffer(PlaneDescriptor const& descriptor)
     -> buf::Item&
 {
@@ -446,32 +484,8 @@ auto DRMCudaCaptureSource::get_image_buffer(PlaneDescriptor const& descriptor)
 
     auto pos = image_buffer_.find(descriptor.fb_id);
     if (pos == image_buffer_.end()) {
-
-        // clang-format off
-        std::intptr_t const img_attr[] = {
-            EGL_LINUX_DRM_FOURCC_EXT, descriptor.pixel_format,
-            EGL_WIDTH, descriptor.width,
-            EGL_HEIGHT, descriptor.height,
-            EGL_DMA_BUF_PLANE0_FD_EXT, descriptor.fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT, descriptor.offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT, descriptor.pitch,
-            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, static_cast<std::uint32_t>(descriptor.modifier & 0xffffffffull),
-            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, static_cast<std::uint32_t>(descriptor.modifier >> 32ull),
-            EGL_NONE
-        };
-        // clang-format on
-        auto image = egl().eglCreateImage(egl_display_,
-                                          EGL_NO_CONTEXT,
-                                          EGL_LINUX_DMA_BUF_EXT,
-                                          static_cast<EGLClientBuffer>(nullptr),
-                                          img_attr);
-        if (image == EGL_NO_IMAGE) {
-            throw std::runtime_error { "eglCreateImage input failed: " +
-                                       std::to_string(egl().eglGetError()) };
-        }
-
-        auto [item, inserted] = image_buffer_.insert(
-            descriptor.fb_id, buf::Item { egl_display_, image, frame_number_ });
+        auto [item, inserted] =
+            image_buffer_.insert(descriptor.fb_id, create_image(descriptor));
         SC_EXPECT(inserted);
         pos = item;
     }
@@ -569,7 +583,7 @@ auto DRMCudaCaptureSource::capture_(
         static_cast<float>(offset) /
         std::chrono::duration_cast<std::chrono::nanoseconds>(frame_interval_)
             .count();
-    bool const out_of_phase = offset_factor >= kPhaseDriftErrorThreshold;
+    bool const out_of_phase = offset_factor >= phase_drift_threshold_;
 
     /* There isn't much point in reporting more than one consecutive
      * out-of-phase error. If we're still out-of-phase on the second attempt
@@ -587,7 +601,13 @@ auto DRMCudaCaptureSource::capture_(
         return;
     }
 
-    buf::Item& image = get_image_buffer(*descriptor);
+    std::optional<buf::Item> non_cached_image_storage {};
+    buf::Item& image = [&]() -> buf::Item& {
+        if (image_buffer_.capacity())
+            return get_image_buffer(*descriptor);
+
+        return non_cached_image_storage.emplace(create_image(*descriptor));
+    }();
 
     opengl::bind(opengl::TextureTarget<GL_TEXTURE_EXTERNAL_OES> {},
                  color_converter_.input_texture(),

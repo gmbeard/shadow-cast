@@ -43,6 +43,9 @@ struct lru_map
 
     auto insert(Key const& key, T item) -> std::pair<iterator, bool>
     {
+        if (max_size_ == 0)
+            return std::make_pair(history_.end(), false);
+
         auto existing = index_.find(key);
 
         if (existing != index_.end()) {
@@ -55,6 +58,8 @@ struct lru_map
             auto& last = history_.back();
             SC_EXPECT(index_.erase(std::get<0>(last)) == 1);
             history_.pop_back();
+            SC_EXPECT(size_ > 0);
+            size_ -= 1;
         }
 
         auto history_position = history_.insert(

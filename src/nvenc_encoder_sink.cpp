@@ -82,10 +82,8 @@ auto create_encoder_context(sc::Parameters const& params,
             std::max(params.vbv_size ? params.vbv_size.value() : params.bitrate,
                      kMinRateControlBufferSize);
     }
-    else {
-        video_encoder_context->rc_buffer_size = std::max(
-            params.vbv_size ? params.vbv_size.value() : params.bitrate * 2,
-            kMinRateControlBufferSize);
+    else if (params.vbv_size.has_value()) {
+        video_encoder_context->rc_buffer_size = params.vbv_size.value();
     }
     video_encoder_context->gop_size = framerate.num * 2;
     video_encoder_context->max_b_frames = 0;

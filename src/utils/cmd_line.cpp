@@ -85,11 +85,13 @@ auto get_bitrate(std::string_view val, std::size_t& bitrate) noexcept -> bool
         switch (unit) {
         case 'm':
         case 'M':
-            safe_multiply(bitrate, 1'000'000lu);
+            if (!safe_multiply(bitrate, 1'000'000lu))
+                return false;
             break;
         case 'k':
         case 'K':
-            safe_multiply(bitrate, 1'000lu);
+            if (!safe_multiply(bitrate, 1'000lu))
+                return false;
             break;
         default:
             return false;
@@ -172,7 +174,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
               sc::CaptureResolution res;
               return get_resolution(param, res);
           },
-      .description = "Capture resolution in the format [<WIDTH>x]<HEIGHT>. "
+      .description = "Output resolution in the format [<WIDTH>x]<HEIGHT>. "
                      "E.g. 1920x1080. If ony HEIGHT is given then WIDTH will "
                      "be calculated based on a 16:9 aspect ratio" },
 
@@ -217,9 +219,9 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
       .long_name = "drm-cache-size",
       .option = sc::CmdLineOption::drm_cache_size,
       .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
-      .validation = sc::ValidRange { 1, 20 },
-      .description =
-          "Max. number of DRM images to cache. Default 10. (Wayland only)" },
+      .validation = sc::ValidRange { 0, 20 },
+      .description = "Max. number of DRM images to cache. A value of 0 will "
+                     "disable the cache. Default 0 (disabled)" },
 
     /* VBV size...
      */
@@ -233,9 +235,9 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
               return get_bitrate(val, bitrate);
           },
       .description =
-          "VBV size. Larger sizes help to bettern constrain the bitrate. "
-          "For CBR the default is 1X bitrate. For VBR the default is 2X "
-          "bitrate." },
+          "VBV size. Smaller sizes help to better constrain the bitrate. "
+          "For CBR the default is 1X bitrate. For VBR the default is "
+          "unspecified (vendor chosen)." },
 
     /* Rate control look-ahead...
      */
@@ -247,6 +249,23 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
       .description =
           "Rate control look-ahead delay. Higher values help to maintain "
           "bitrate accuracy. Defaults to 1/2 the framerate." },
+
+    /* Rate control look-ahead...
+     */
+    { .short_name = 0,
+      .long_name = "phase-drift-threshold",
+      .option = sc::CmdLineOption::phase_drift_threshold,
+      .flags = sc::cmdline::VALUE_REQUIRED | sc::cmdline::VALUE_NUMERIC,
+      .validation = sc::ValidRange { 0, 5 },
+      .description =
+          "Controls the threshold at which frame rate phase drift correction "
+          "will occur. Phase drift correction is useful when the source frame "
+          "rate and capture frame rate are very close to the same value, where "
+          "momentary frame time differences cause drift. This can cause "
+          "expired frames to be captured, resulting in periods of low frame "
+          "rate "
+          "artifacts in the output video. Higher values will cause less "
+          "correction. Accepted values are 0 to 5 inclusive. Defaults to 2" },
 };
 
 template <typename T>
@@ -419,24 +438,47 @@ struct Wrapped
     std::size_t indent { 0 };
 };
 
+template <typename F>
+auto for_each_wrapped_line(std::string_view data,
+                           std::size_t max_line_length,
+                           F f) noexcept -> void
+{
+    while (data.size() > max_line_length) {
+        auto last_whitespace_pos = data.begin();
+        auto pos = data.begin();
+        auto const end = data.end();
+        std::size_t col = 0;
+
+        for (; pos != end && col < max_line_length; ++pos, ++col) {
+            if (*pos == ' ')
+                last_whitespace_pos = pos;
+        }
+
+        f(data.substr(
+            0, static_cast<std::size_t>(last_whitespace_pos - data.begin())));
+
+        if (std::next(last_whitespace_pos) != data.end())
+            ++last_whitespace_pos;
+
+        data = data.substr(
+            static_cast<std::size_t>(last_whitespace_pos - data.begin()));
+    }
+
+    f(data);
+}
+
 template <typename Out>
 auto operator<<(Out& out, Wrapped const& wrapped) -> Out&
 {
-    auto data = wrapped.data;
-
     bool is_first_line = true;
-    while (data.size() > (wrapped.cols + wrapped.indent)) {
-        auto const line = data.substr(0, wrapped.cols);
-        data = data.substr(wrapped.cols);
+    for_each_wrapped_line(wrapped.data, wrapped.cols, [&](auto line) {
         if (!is_first_line)
             out << std::string(wrapped.indent, ' ');
         out << line << '\n';
         is_first_line = false;
-    }
+    });
 
-    if (!is_first_line)
-        out << std::string(wrapped.indent, ' ');
-    return out << data;
+    return out;
 }
 
 } // namespace
@@ -552,7 +594,7 @@ auto get_parameters(CmdLine const& cmdline) noexcept
         .quality = cmdline.get_option_value_or_default(
             sc::CmdLineOption::quality, 8, sc::number_value),
         .drm_cache_size = cmdline.get_option_value_or_default(
-            sc::CmdLineOption::drm_cache_size, 10, sc::number_value),
+            sc::CmdLineOption::drm_cache_size, 0, sc::number_value),
     };
 
     if (cmdline.has_option(CmdLineOption::resolution)) {
@@ -590,6 +632,13 @@ auto get_parameters(CmdLine const& cmdline) noexcept
             cmdline.get_option_value(CmdLineOption::rc_lookahead, number_value);
     }
 
+    if (cmdline.has_option(CmdLineOption::phase_drift_threshold)) {
+        auto const value = cmdline.get_option_value(
+            CmdLineOption::phase_drift_threshold, number_value);
+
+        params.phase_drift_threshold = static_cast<float>(5 + value) / 10.f;
+    }
+
     if (!params.output_file.size())
         return CmdLineError { CmdLineError::error,
                               "Missing parameter: output file" };
@@ -604,13 +653,21 @@ auto output_help() -> void
               << " [ OPTIONS... ] <OUTPUT_FILE>\n";
     std::cerr << "OPTIONS:\n";
     for (auto const& spec : cmd_line_spec) {
-        std::cerr << "  -" << spec.short_name;
+        if (spec.short_name != 0)
+            std::cerr << "  -" << spec.short_name;
+        if (!spec.long_name.empty()) {
+            if (spec.short_name != 0)
+                std::cerr << ", ";
+            else
+                std::cerr << "  ";
+            std::cerr << "--" << spec.long_name;
+        }
         if (spec.flags & cmdline::VALUE_REQUIRED)
             std::cerr << " <VALUE>";
         else if (spec.flags & cmdline::VALUE_OPTIONAL)
             std::cerr << " [ <VALUE> ]";
 
-        std::cerr << "\n    " << Wrapped { spec.description, 60, 4 } << "\n\n";
+        std::cerr << "\n      " << Wrapped { spec.description, 74, 6 } << "\n";
     }
     std::cerr << '\n';
 }
