@@ -1,3 +1,4 @@
+include(GNUInstallDirs)
 add_executable(drm_planes)
 
 target_sources(
@@ -21,9 +22,41 @@ target_include_directories(
     "${CMAKE_CURRENT_LIST_DIR}/drm_planes"
 )
 
+set_target_properties(
+    drm_planes
+    PROPERTIES
+        OUTPUT_NAME "shadowcast-drm-exporter"
+)
+
 target_link_libraries(
     drm_planes
     PRIVATE
     shadowcastobjects
     DRM::drm
+)
+
+add_executable(senders)
+
+target_sources(
+    senders
+    PRIVATE
+    senders/main.cpp
+)
+
+target_include_directories(
+    senders
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/senders"
+)
+
+target_link_libraries(
+    senders
+    PRIVATE
+    shadowcastobjects
+    DRM::drm
+)
+
+install(
+    TARGETS drm_planes
+    RUNTIME DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}"
 )

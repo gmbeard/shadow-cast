@@ -13,7 +13,7 @@ printf \
 cmake \
     --build "${build_dir}" \
     --target install \
-    -- -j$(nproc)
+    -j $(nproc)
 
 setcap \
     cap_sys_admin+ep \

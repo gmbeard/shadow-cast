@@ -248,7 +248,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
       .validation = sc::ValidRange { 0, 58 },
       .description =
           "Rate control look-ahead delay. Higher values help to maintain "
-          "bitrate accuracy. Defaults to 1/2 the framerate." },
+          "bitrate accuracy. Default 0" },
 
     /* Rate control look-ahead...
      */
@@ -265,7 +265,7 @@ sc::CmdLineOptionSpec const cmd_line_spec[] = {
           "expired frames to be captured, resulting in periods of low frame "
           "rate "
           "artifacts in the output video. Higher values will cause less "
-          "correction. Accepted values are 0 to 5 inclusive. Defaults to 2" },
+          "correction. Accepted values are 0 to 5 inclusive. Defaults to 5" },
 };
 
 template <typename T>
@@ -539,9 +539,50 @@ auto CmdLine::get_option_value(CmdLineOption opt) const noexcept
     return get_option_value_dispatch(opt, string_value);
 }
 
+auto parse_environment(sc::CmdLine& cmdline) -> void
+{
+    auto constexpr to_environ_char = [](char c) noexcept {
+        if (c >= 'a' && c <= 'z')
+            return static_cast<char>('A' + (c - 'a'));
+
+        if (c == '-')
+            return '_';
+
+        return c;
+    };
+
+    std::string key { "SHADOWCAST_" };
+    auto const prefix_length = key.size();
+
+    std::for_each(
+        std::begin(cmd_line_spec),
+        std::end(cmd_line_spec),
+        [&](sc::CmdLineOptionSpec const& spec) {
+            if (spec.long_name.size() == 0)
+                return;
+
+            if (cmdline.has_option(spec.option))
+                return;
+
+            key.resize(prefix_length + spec.long_name.size());
+            std::transform(std::begin(spec.long_name),
+                           std::end(spec.long_name),
+                           std::begin(key) + prefix_length,
+                           to_environ_char);
+
+            char const* val = std::getenv(key.c_str());
+            if (!val)
+                return;
+
+            cmdline.options_.push_back(
+                { spec.option, spec.flags, check_valid_value(val, spec) });
+        });
+}
+
 auto parse_cmd_line(int argc, char const** argv) -> CmdLine
 {
     CmdLine cmdline;
+
     std::span<char const*> args { argv, static_cast<std::size_t>(argc) };
     if (!args.size())
         return cmdline;
@@ -554,12 +595,24 @@ auto parse_cmd_line(int argc, char const** argv) -> CmdLine
         if (c[0] == '-' && c[1]) {
             CmdLineOptionValue val;
             std::tie(val, it) = parse_option(it, args.end());
-            cmdline.options_.push_back(val);
+            auto existing_pos = std::find_if(std::begin(cmdline.options_),
+                                             std::end(cmdline.options_),
+                                             [&](CmdLineOptionValue const& v) {
+                                                 return v.option == val.option;
+                                             });
+            if (existing_pos != std::end(cmdline.options_)) {
+                *existing_pos = std::move(val);
+            }
+            else {
+                cmdline.options_.push_back(val);
+            }
         }
         else {
             cmdline.args_.push_back(*it++);
         }
     }
+
+    parse_environment(cmdline);
 
     return cmdline;
 }

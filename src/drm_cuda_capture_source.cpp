@@ -104,9 +104,10 @@ namespace
 char constexpr kSocketPath[] = "shadow-cast.sock";
 std::size_t constexpr kDRMConnectTimeoutMs = 1'000;
 std::size_t constexpr kDRMDataTimeoutMs = 1'000;
-char constexpr kDRMBin[] = "shadow-cast-kms";
+// char constexpr kDRMBin[] = "shadow-cast-kms";
+char constexpr kDRMBin[] = "shadowcast-drm-exporter";
 char constexpr kSharedMemoryName[] = "/shadow-cast-shmem-0";
-float constexpr kPhaseDriftErrorThreshold = 0.7f;
+float constexpr kPhaseDriftErrorThreshold = 1.0f;
 
 auto get_drm_data(
     sc::UnixSocket& socket,
@@ -197,8 +198,7 @@ auto find_drm_helper_binary()
      */
     auto kms_bin_dir = fs::read_symlink("/proc/self/exe");
     kms_bin_dir.remove_filename();
-    auto kms_bin_path = kms_bin_dir / "../toolbox" / "drm_planes";
-    // auto kms_bin_path = kms_bin_dir / kDRMBin;
+    auto kms_bin_path = kms_bin_dir / "../toolbox" / kDRMBin;
     sc::log(sc::LogLevel::debug,
             "Checking for %s at %s",
             kDRMBin,
@@ -211,18 +211,18 @@ auto find_drm_helper_binary()
         return kms_bin_path;
     }
 
-    // kms_bin_path = fs::path(sc::KLibExecDir) / kDRMBin;
-    // sc::log(sc::LogLevel::debug,
-    //         "Checking for %s at %s",
-    //         kDRMBin,
-    //         kms_bin_path.c_str());
-    // if (fs::exists(kms_bin_path)) {
-    //     sc::log(sc::LogLevel::debug,
-    //             "Found %s at %s",
-    //             kDRMBin,
-    //             kms_bin_path.c_str());
-    //     return kms_bin_path;
-    // }
+    kms_bin_path = fs::path(sc::KLibExecDir) / kDRMBin;
+    sc::log(sc::LogLevel::debug,
+            "Checking for %s at %s",
+            kDRMBin,
+            kms_bin_path.c_str());
+    if (fs::exists(kms_bin_path)) {
+        sc::log(sc::LogLevel::debug,
+                "Found %s at %s",
+                kDRMBin,
+                kms_bin_path.c_str());
+        return kms_bin_path;
+    }
 
     throw new std::runtime_error { "Couldn't locate DRM helper" };
 }
@@ -601,6 +601,11 @@ auto DRMCudaCaptureSource::capture_(
         return;
     }
 
+    /* The user may have disabled the cache altogether, so we account for this
+     * by defining a temporary storage location on the stack and returning a
+     * reference to it instead. However, in the case where `image_buffer_`
+     * _does_ have capacity, then the oldest item will be replaced...
+     */
     std::optional<buf::Item> non_cached_image_storage {};
     buf::Item& image = [&]() -> buf::Item& {
         if (image_buffer_.capacity())

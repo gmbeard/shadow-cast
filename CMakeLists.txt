@@ -147,7 +147,7 @@ install(
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(
-    TARGETS shadow-cast-kms
-    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}
-)
+#install(
+#    TARGETS shadow-cast-kms
+#    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}
+#)

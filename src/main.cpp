@@ -50,61 +50,72 @@ auto app(sc::Parameters params) -> void
                         sc::log(sc::LogLevel::info, "Session completed");
                     });
 
-    try {
-        sc::log(sc::LogLevel::info,
-                "Capture session running. Ctrl+C / SIGINT to stop");
-        static_cast<void>(execution_context.run());
-        sc::log(sc::LogLevel::info, "Finalizing output container");
-        sc::log(sc::LogLevel::info, "Finished");
+    sc::log(sc::LogLevel::info,
+            "Capture session running. Ctrl+C / SIGINT to stop");
+    static_cast<void>(execution_context.run());
+    sc::log(sc::LogLevel::info, "Finalizing output container");
+    sc::log(sc::LogLevel::info, "Finished");
 #ifdef SHADOW_CAST_ENABLE_HISTOGRAMS
-        sc::metrics::format_histogram(
-            std::cout,
-            sc::metrics::get_histogram(sc::metrics::audio_metrics),
-            "Frame time (ns)",
-            "Audio Frame Times");
-        std::cout << '\n';
-        sc::metrics::format_histogram(
-            std::cout,
-            sc::metrics::get_histogram(sc::metrics::video_metrics),
-            "Frame time (ns)",
-            "Video Frame Times");
-        std::cout << '\n';
-        sc::metrics::format_histogram(
-            std::cout,
-            sc::metrics::get_histogram(sc::metrics::cpu_metrics),
-            "CPU %",
-            "CPU usage / frame");
+    sc::metrics::format_histogram(
+        std::cout,
+        sc::metrics::get_histogram(sc::metrics::audio_metrics),
+        "Frame time (ns)",
+        "Audio Frame Times");
+    std::cout << '\n';
+    sc::metrics::format_histogram(
+        std::cout,
+        sc::metrics::get_histogram(sc::metrics::video_metrics),
+        "Frame time (ns)",
+        "Video Frame Times");
+    std::cout << '\n';
+    sc::metrics::format_histogram(
+        std::cout,
+        sc::metrics::get_histogram(sc::metrics::cpu_metrics),
+        "CPU %",
+        "CPU usage / frame");
 #endif
 #ifdef SHADOW_CAST_ENABLE_PROFILING
-        auto const& profile_table = sc::metrics::get_profile_table();
-        std::for_each(
-            profile_table.begin(), profile_table.end(), [&](auto const& entry) {
-                auto const& [id, data] = entry;
-                std::cerr << sc::metrics::get_profile_section_name(id) << ": "
-                          << data.sample_count << ", " << data.highest_duration
-                          << ", " << data.lowest_duration << ", "
-                          << data.average_duration << '\n';
-            });
+    auto const& profile_table = sc::metrics::get_profile_table();
+    std::for_each(
+        profile_table.begin(), profile_table.end(), [&](auto const& entry) {
+            auto const& [id, data] = entry;
+            std::cerr << sc::metrics::get_profile_section_name(id) << ": "
+                      << data.sample_count << ", " << data.highest_duration
+                      << ", " << data.lowest_duration << ", "
+                      << data.average_duration << '\n';
+        });
 #endif
-    }
-    catch (std::exception const& e) {
-        sc::log(sc::LogLevel::error, "%s", e.what());
-    }
 }
 
 struct PipewireInit
 {
-    PipewireInit(int& argc, char** argv) noexcept { pw_init(&argc, &argv); }
-    ~PipewireInit() { pw_deinit(); }
+    PipewireInit(int& argc, char** argv) noexcept
+    {
+        pw_init(&argc, &argv);
+    }
+    ~PipewireInit()
+    {
+        pw_deinit();
+    }
 };
 
 auto main(int argc, char const** argv) -> int
 {
+    sc::CmdLine cmdline;
+    try {
+        cmdline = sc::parse_cmd_line(argc - 1, argv + 1);
+    }
+    catch (std::exception const& e) {
+        sc::log(sc::LogLevel::error, "%s", e.what());
+        return 1;
+    }
+
+    auto params = sc::get_parameters(cmdline);
+
     auto const memory_arenas = sc::create_memory_arenas();
 
     sc::load_gl_extensions();
     sc::block_signals({ SIGINT, SIGCHLD });
-    auto params = sc::get_parameters(sc::parse_cmd_line(argc - 1, argv + 1));
 
     if (!params) {
         switch (params.error().type) {

@@ -137,6 +137,7 @@ concept OptionDataType =
 struct CmdLine
 {
     friend auto parse_cmd_line(int argc, char const** argv) -> CmdLine;
+    friend auto parse_environment(CmdLine& cmdline) -> void;
 
 private:
     std::vector<CmdLineOptionValue> options_;

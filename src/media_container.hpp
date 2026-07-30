@@ -4,6 +4,7 @@
 #include "av/format.hpp"
 #include "packet_queue.hpp"
 #include <atomic>
+#include <exception>
 #include <filesystem>
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -26,6 +27,7 @@ struct MediaContainer
     auto add_stream(AVCodecContext const* encoder) -> void;
 
 private:
+    auto check_for_thread_failure() -> void;
     auto encode_frame(AVFrame* frame, AVCodecContext* ctx, AVStream* stream)
         -> void;
 
@@ -37,6 +39,8 @@ private:
     PacketQueue output_queue_ {};
     std::atomic_uint8_t queue_processor_running_ { 1 };
     std::thread queue_processing_thread_;
+    std::exception_ptr thread_error_;
+    std::atomic_bool thread_error_pending_ { false };
 };
 } // namespace sc
 

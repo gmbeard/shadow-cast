@@ -124,26 +124,26 @@ target_link_libraries(
 
 set(
     SHADOW_CAST_KMS_BINARY_NAME
-    "shadow-cast-kms"
+    "shadowcast-drm-exporter"
     PARENT_SCOPE
 )
 
-add_executable(shadow-cast-kms)
-
-target_sources(shadow-cast-kms
-    PRIVATE
-        kms.cpp
-)
-
-set_target_properties(
-    shadow-cast-kms
-    PROPERTIES
-        OUTPUT_NAME "${SHADOW_CAST_KMS_BINARY_NAME}"
-)
-
-target_link_libraries(shadow-cast-kms
-    PRIVATE
-        embedded_glsl
-        shadowcastobjects
-        DRM::drm
-)
+#add_executable(shadow-cast-kms)
+#
+#target_sources(shadow-cast-kms
+#    PRIVATE
+#        kms.cpp
+#)
+#
+#set_target_properties(
+#    shadow-cast-kms
+#    PROPERTIES
+#        OUTPUT_NAME "${SHADOW_CAST_KMS_BINARY_NAME}"
+#)
+#
+#target_link_libraries(shadow-cast-kms
+#    PRIVATE
+#        embedded_glsl
+#        shadowcastobjects
+#        DRM::drm
+#)

@@ -2,27 +2,167 @@
 #include "dmabuf_handle.hpp"
 #include "drm_device.hpp"
 #include "drm_plane_framebuffer.hpp"
+#include "exios/buffer_view.hpp"
 #include "frame_time_detector.hpp"
 #include "frame_timer.hpp"
 #include "framebuffer_descriptor.hpp"
 #include "logging.hpp"
 #include "utils/contracts.hpp"
+#include <algorithm>
+#include <asm-generic/socket.h>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <linux/dma-buf.h>
+#include <memory>
 #include <optional>
 #include <string_view>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <system_error>
+#include <type_traits>
 #include <unistd.h>
+#include <vector>
 
-#define DEBUG_LOGGING 0
+#define DEBUG_LOGGING 1
 
 size_t constexpr kMaxFDs = 8;
+
+namespace
+{
+template <typename Allocator>
+struct message_base
+{
+    using allocator =
+        std::allocator_traits<Allocator>::template rebind_alloc<std::uint8_t>;
+
+    template <typename UAllocator>
+    explicit message_base(UAllocator const& alloc) noexcept
+        : control_buffer_internal_ { alloc }
+        , iovec_buffer_internal_ {
+            std::allocator_traits<allocator>::template rebind_alloc<iovec>(
+                alloc)
+        }
+    {
+    }
+
+    message_base() noexcept
+    requires(std::is_default_constructible_v<allocator>)
+        : message_base(allocator {})
+    {
+    }
+
+    template <typename UAllocator>
+    message_base(UAllocator const& alloc,
+                 exios::ConstBufferView data_buffer,
+                 exios::ConstBufferView control_buffer) noexcept
+        : control_buffer_internal_ { alloc }
+        , iovec_buffer_internal_ { std::allocator_traits<
+              allocator>::template rebind_alloc<iovec>(alloc) }
+        , data_buffer_ { data_buffer }
+        , control_buffer_ { control_buffer }
+    {
+    }
+
+    message_base(exios::ConstBufferView data_buffer) noexcept
+    requires(std::is_default_constructible_v<allocator>)
+        : message_base(allocator {}, data_buffer, exios::ConstBufferView {})
+    {
+    }
+
+    message_base(exios::ConstBufferView data_buffer,
+                 exios::ConstBufferView control_buffer) noexcept
+    requires(std::is_default_constructible_v<allocator>)
+        : message_base(allocator {}, data_buffer, control_buffer)
+    {
+    }
+
+    auto set_control_buffer(exios::ConstBufferView buffer) noexcept
+        -> message_base&
+    {
+        control_buffer_ = buffer;
+        return *this;
+    }
+
+    auto set_data_buffer(exios::ConstBufferView buffer) noexcept
+        -> message_base&
+    {
+        data_buffer_ = buffer;
+        return *this;
+    }
+
+    [[nodiscard]] auto control_buffer() const noexcept -> exios::ConstBufferView
+    {
+        return exios::const_buffer_view(control_buffer_internal_);
+    }
+
+    [[nodiscard]] auto data_buffer() const noexcept -> exios::ConstBufferView
+    {
+        return data_buffer_;
+    }
+
+    [[nodiscard]] friend auto message_view(message_base& msg) -> msghdr
+    {
+        msg.iovec_buffer_internal_.resize(1);
+        msg.iovec_buffer_internal_[0] = { msg.data_buffer().data,
+                                          msg.data_buffer().size };
+
+        auto result = msghdr {};
+        result.msg_iov = msg.iovec_buffer_internal_.data();
+        result.msg_iovlen = msg.iovec_buffer_internal_.size();
+
+        if (msg.control_buffer_.size) {
+            msg.control_buffer_internal_.resize(
+                CMSG_SPACE(msg.control_buffer().size));
+
+            result.msg_control = msg.control_buffer_internal_.data();
+            result.msg_controllen = msg.control_buffer_internal_.size();
+
+            auto* hdr = CMSG_FIRSTHDR(&result);
+            hdr->cmsg_level = SOL_SOCKET;
+            hdr->cmsg_type = SCM_RIGHTS;
+            hdr->cmsg_len = CMSG_LEN(msg.control_buffer_internal_.size());
+
+            std::copy_n(reinterpret_cast<std::uint8_t const*>(
+                            msg.control_buffer().data),
+                        msg.control_buffer().size,
+                        reinterpret_cast<std::uint8_t*>(CMSG_DATA(hdr)));
+        }
+
+        return result;
+    }
+
+private:
+    std::vector<std::uint8_t, allocator> control_buffer_internal_;
+    std::vector<iovec, allocator> iovec_buffer_internal_;
+    exios::ConstBufferView control_buffer_;
+    exios::ConstBufferView data_buffer_;
+};
+
+using message = message_base<std::allocator<void>>;
+
+template <typename Allocator>
+auto message_view(message_base<Allocator>& msg,
+                  exios::ConstBufferView data_buffer)
+{
+    msg.set_data_buffer(data_buffer);
+    msg.set_control_buffer(exios::ConstBufferView {});
+    return message_view(msg);
+}
+
+template <typename Allocator>
+auto message_view(message_base<Allocator>& msg,
+                  exios::ConstBufferView data_buffer,
+                  exios::ConstBufferView control_buffer)
+{
+    msg.set_data_buffer(data_buffer);
+    msg.set_control_buffer(control_buffer);
+    return message_view(msg);
+}
+
+} // namespace
 
 dmabuf_exporter::dmabuf_exporter(
     exios::UnixSocket& socket,

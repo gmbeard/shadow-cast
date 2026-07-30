@@ -1,5 +1,6 @@
 include(FetchContent)
-set(SHADOW_CAST_EXIOS_VERSION "0.5.1")
+#set(SHADOW_CAST_EXIOS_VERSION "0.6.0")
+set(SHADOW_CAST_EXIOS_VERSION "12cf57ab85dd0fe18ab37d301aed582baf8cb640")
 
 if(SHADOW_CAST_USE_LOCAL_DEPENDENCIES)
     FetchContent_Declare(

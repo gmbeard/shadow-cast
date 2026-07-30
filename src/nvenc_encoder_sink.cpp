@@ -163,14 +163,13 @@ auto create_encoder_context(sc::Parameters const& params,
         av_dict_set(&options, "rc", "cbr", 0);
     }
 
-    av_dict_set_int(
-        &options,
-        "rc-lookahead",
-        std::min(kMaxNvencLookahead,
-                 params.rc_lookahead
-                     ? params.rc_lookahead.value()
-                     : static_cast<int>(params.frame_time.fps() / 2)),
-        0);
+    if (params.rc_lookahead) {
+        av_dict_set_int(
+            &options,
+            "rc-lookahead",
+            std::min(kMaxNvencLookahead, params.rc_lookahead.value()),
+            0);
+    }
 
     if (auto const ret = avcodec_open2(
             video_encoder_context.get(), video_encoder.get(), &options);
